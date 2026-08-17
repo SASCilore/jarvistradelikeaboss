@@ -1,0 +1,7 @@
+data/
+results/
+__pycache__/
+*.pyc
+.env
+# NOTE: state/ n'est PAS ignoré volontairement — il doit être committé
+# par le workflow GitHub Actions pour persister le portefeuille entre les runs.
