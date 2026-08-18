@@ -1,14 +1,5 @@
 """
-Stratégie hybride : grid trading + filtres multiples.
-
-Indicateurs utilisés :
-- ATR       -> espacement du grid dynamique selon la volatilité réelle du marché
-- Percentile ATR -> coupe-circuit en cas de volatilité extrême (flash crash, news choc)
-- RSI       -> évite d'acheter en zone de surachat
-- MACD      -> confirme que la tendance de fond est haussière avant d'acheter
-- Volume    -> ne valide un achat que si le mouvement est confirmé par le volume
-- SMA200    -> filtre de tendance de base (même timeframe que le trading)
-- SMA50 journalière -> filtre de tendance multi-timeframe (indépendant du bruit horaire)
+Stratégie hybride : grid trading + filtres multiples + stop-loss/take-profit.
 """
 import pandas as pd
 import numpy as np
@@ -25,7 +16,6 @@ def _compute_atr(df: pd.DataFrame, period: int) -> pd.Series:
 
 
 def _compute_atr_percentile(atr: pd.Series, window: int) -> pd.Series:
-    """Percentile (0-100) de la valeur ATR actuelle par rapport à sa fenêtre glissante récente."""
     return atr.rolling(window).apply(lambda s: (s.iloc[-1] >= s).mean() * 100, raw=False)
 
 
@@ -37,7 +27,7 @@ def _compute_rsi(close: pd.Series, period: int) -> pd.Series:
     avg_loss = loss.rolling(period).mean()
     rs = avg_gain / avg_loss.replace(0, np.nan)
     rsi = 100 - (100 / (1 + rs))
-    return rsi.fillna(50)  # neutre si pas assez de données/pas de perte
+    return rsi.fillna(50)
 
 
 def _compute_macd(close: pd.Series, fast: int, slow: int, signal: int) -> tuple:
@@ -49,7 +39,6 @@ def _compute_macd(close: pd.Series, fast: int, slow: int, signal: int) -> tuple:
 
 
 def _compute_htf_trend(df: pd.DataFrame, ma_period: int) -> pd.Series:
-    """Tendance sur clôtures journalières, reportée (forward-fill) sur l'index horaire d'origine."""
     daily_close = df["close"].resample("1D").last()
     daily_ma = daily_close.rolling(ma_period).mean()
     daily_uptrend = pd.Series(np.where(daily_ma.notna(), daily_close > daily_ma, np.nan), index=daily_close.index)
@@ -58,7 +47,6 @@ def _compute_htf_trend(df: pd.DataFrame, ma_period: int) -> pd.Series:
 
 
 def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
-    """Calcule tous les indicateurs utilisés par la stratégie et les ajoute au DataFrame."""
     df = df.copy()
 
     df["trend_ma"] = df["close"].rolling(config.TREND_MA_PERIOD).mean()
@@ -86,7 +74,6 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_grid(center_price: float, levels: int, spacing_pct: float) -> list:
-    """Construit les niveaux de prix du grid autour d'un prix central, pour un espacement donné."""
     grid = []
     for i in range(1, levels + 1):
         grid.append(round(center_price * (1 - spacing_pct / 100 * i), 2))
@@ -137,9 +124,20 @@ class GridTrendStrategy:
                     return {"action": "BUY", "price": price, "size_usd": config.GRID_ORDER_SIZE_USD, "grid_level": lv}
 
         for pos in list(self.open_grid_positions):
-            target_sell = pos["buy_price"] * (1 + pos["spacing_pct"] / 100)
-            if price >= target_sell:
+            take_profit_price = pos["buy_price"] * (1 + pos["spacing_pct"] / 100)
+            stop_loss_price = None
+            if config.STOP_LOSS_ENABLED:
+                sl_pct = pos["spacing_pct"] / config.STOP_LOSS_RATIO
+                stop_loss_price = pos["buy_price"] * (1 - sl_pct / 100)
+
+            if price >= take_profit_price:
                 self.open_grid_positions.remove(pos)
-                return {"action": "SELL", "price": price, "size_usd": config.GRID_ORDER_SIZE_USD, "grid_level": pos["buy_price"]}
+                return {"action": "SELL", "price": price, "size_usd": config.GRID_ORDER_SIZE_USD,
+                        "grid_level": pos["buy_price"], "reason": "take_profit"}
+
+            if stop_loss_price is not None and price <= stop_loss_price:
+                self.open_grid_positions.remove(pos)
+                return {"action": "SELL", "price": price, "size_usd": config.GRID_ORDER_SIZE_USD,
+                        "grid_level": pos["buy_price"], "reason": "stop_loss"}
 
         return {"action": None, "price": price, "size_usd": 0, "grid_level": None}
