@@ -2,7 +2,9 @@ name: Run Trading Bot
 
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    # Décalé de 3 min par rapport aux horaires ronds (:00, :15, :30, :45) où
+    # la charge GitHub Actions est la plus forte — réduit les délais d'exécution.
+    - cron: "3,18,33,48 * * * *"
   workflow_dispatch:
 
 permissions:
