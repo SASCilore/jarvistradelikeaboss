@@ -27,7 +27,8 @@ ATR_MIN_SPACING_PCT = 0.7   # plancher relevé pour couvrir les frais Kraken (0,
 
 # --- Coupe-circuit volatilité extrême (flash crash / news choc) ---
 VOLATILITY_HALT_ENABLED = True
-VOLATILITY_PERCENTILE_WINDOW = 2880   # équivalent à 30 jours en bougies de 15min (720*4)
+VOLATILITY_PERCENTILE_WINDOW = 480   # ~5 jours en bougies de 15min — réduit pour tenir
+                                       # confortablement dans les limites de récupération de Kraken
 VOLATILITY_HALT_PERCENTILE = 95      # au-dessus de ce percentile d'ATR historique, le bot arrête d'acheter
 
 # --- RSI : évite d'acheter en zone de surachat ---
@@ -47,7 +48,7 @@ VOLUME_MA_PERIOD = 80   # équivalent à 20h en bougies de 15min
 VOLUME_MIN_RATIO = 1.0   # volume actuel doit être >= VOLUME_MA * ce ratio pour valider un achat
 
 # --- Filtre de tendance ---
-TREND_MA_PERIOD = 800     # équivalent à 200h (~8,3 jours) en bougies de 15min
+TREND_MA_PERIOD = 384     # ~4 jours (96h) en bougies de 15min — réduit pour tenir avec marge
 TREND_FILTER_ENABLED = True
 
 # --- Filtre de tendance multi-timeframe (tendance journalière, indépendante du bruit horaire) ---
