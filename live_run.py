@@ -1,5 +1,16 @@
 """
 Point d'entrée pour l'exécution PÉRIODIQUE en autonomie (via GitHub Actions).
+
+Contrairement à main.py (qui rejoue tout un historique d'un coup pour le backtest),
+ce script :
+1. Charge l'état persistant du portefeuille (state/bot_state.json)
+2. Récupère les données récentes nécessaires (juste assez pour calculer les indicateurs)
+3. Évalue UN signal sur la dernière bougie
+4. Exécute le trade si signal (en paper trading — aucun ordre réel envoyé)
+5. Sauvegarde le nouvel état
+6. Envoie une notification Telegram si un trade a eu lieu, + un résumé une fois par jour
+
+Conçu pour être relancé toutes les ~15 min sans état en mémoire entre les appels.
 """
 from datetime import datetime, timezone
 
@@ -12,7 +23,12 @@ from telegram_notifier import notify_trade, notify_daily_summary, notify_error
 
 def run_once():
     try:
-        lookback_days = max(10, (config.TREND_MA_PERIOD // 24) + 5)
+        # Calcule combien de jours d'historique récupérer, en tenant compte de la
+        # fenêtre la plus large parmi tous les indicateurs (pas seulement la tendance),
+        # et de la durée réelle d'une bougie (TIMEFRAME_MINUTES).
+        largest_window_candles = max(config.TREND_MA_PERIOD, config.VOLATILITY_PERCENTILE_WINDOW)
+        minutes_needed = largest_window_candles * config.TIMEFRAME_MINUTES
+        lookback_days = max(10, (minutes_needed // (60 * 24)) + 5)  # +5 jours de marge de sécurité
         df = fetch_ohlcv(since_days=lookback_days)
         df = add_indicators(df)
         df = df.dropna(subset=["trend_ma"])
