@@ -20,7 +20,8 @@ def load_or_fetch_data() -> pd.DataFrame:
         print(f"Chargement des données depuis {DATA_PATH}")
         df = pd.read_csv(DATA_PATH, index_col="timestamp", parse_dates=True)
     else:
-        df = fetch_ohlcv(since_days=365)
+        # Backtest sur Binance (historique profond disponible), exécution live reste sur Kraken.
+        df = fetch_ohlcv(symbol=config.BACKTEST_SYMBOL, since_days=365, exchange_id=config.BACKTEST_EXCHANGE)
         save_to_csv(df, DATA_PATH)
     return df
 
