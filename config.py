@@ -20,10 +20,18 @@ GRID_SPACING_PCT = 0.5    # espacement de repli si l'ATR n'est pas disponible (w
 GRID_ORDER_SIZE_USD = 200 # taille d'un ordre à chaque niveau
 GRID_RECENTER_THRESHOLD_PCT = 5.0  # recentre le grid si le prix s'écarte de plus de X% du centre actuel
 
-# --- ATR : espacement de grid dynamique selon la volatilité réelle ---
+# --- ATR : espacement de grid dynamique selon la volatilité réelle (= take-profit par position) ---
 ATR_PERIOD = 56   # équivalent à 14h en bougies de 15min (14*4)
 ATR_GRID_MULTIPLIER = 1.0   # espacement du grid = ATR% * ce multiplicateur (plus haut = grid plus large)
-ATR_MIN_SPACING_PCT = 0.7   # plancher relevé pour couvrir les frais Kraken (0,52% aller-retour) + marge
+ATR_MIN_SPACING_PCT = 2.5   # plancher du take-profit — calibré pour un ratio 3:1 brut avec
+                             # le stop-loss (~1,46:1 net après frais), en gardant des trades
+                             # raisonnablement fréquents (mouvements de 2,5% pas rares sur BTC)
+
+# --- Stop-loss par position ---
+STOP_LOSS_ENABLED = True
+STOP_LOSS_RATIO = 3.0   # le stop-loss = take-profit / ce ratio → avec TP~2,5% et ratio 3,
+                          # SL~0,83% ; ratio brut 3:1, net après frais (~0,52% aller-retour) ≈ 1,46:1
+                          # Seuil de rentabilité (win rate minimum) avec ces chiffres : ~40,5%
 
 # --- Coupe-circuit volatilité extrême (flash crash / news choc) ---
 VOLATILITY_HALT_ENABLED = True
