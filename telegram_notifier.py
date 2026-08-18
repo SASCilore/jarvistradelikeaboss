@@ -8,18 +8,21 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
 
-def send_telegram_message(text: str):
+def send_telegram_message(text: str) -> bool:
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         print("[Telegram] Non configuré (variables manquantes) — notification ignorée.")
-        return
+        return False
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     try:
         resp = requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": text}, timeout=10)
         if resp.status_code != 200:
             print(f"[Telegram] Échec de l'envoi : {resp.text}")
+            return False
+        return True
     except Exception as e:
         print(f"[Telegram] Erreur d'envoi : {e}")
+        return False
 
 
 def notify_trade(action: str, price: float, size_usd: float, cash: float, btc_holdings: float):
@@ -34,11 +37,11 @@ def notify_trade(action: str, price: float, size_usd: float, cash: float, btc_ho
     send_telegram_message(text)
 
 
-def notify_daily_summary(report: dict):
+def notify_daily_summary(report: dict) -> bool:
     lines = ["📊 Résumé quotidien du bot (paper trading)"]
     for k, v in report.items():
         lines.append(f"{k} : {v}")
-    send_telegram_message("\n".join(lines))
+    return send_telegram_message("\n".join(lines))
 
 
 def notify_error(message: str):
