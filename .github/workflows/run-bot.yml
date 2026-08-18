@@ -23,6 +23,14 @@ jobs:
       - name: Installer les dépendances
         run: pip install -r requirements.txt
 
+      - name: DEBUG - Vérifier les secrets
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ]; then echo "TOKEN: VIDE/ABSENT"; else echo "TOKEN: présent, longueur ${#TELEGRAM_BOT_TOKEN} caractères"; fi
+          if [ -z "$TELEGRAM_CHAT_ID" ]; then echo "CHAT_ID: VIDE/ABSENT"; else echo "CHAT_ID: présent = $TELEGRAM_CHAT_ID"; fi
+
       - name: Lancer le bot (un cycle)
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
