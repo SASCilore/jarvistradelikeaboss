@@ -1,5 +1,7 @@
 """
 Stratégie hybride : grid trading + filtres multiples + stop-loss/take-profit.
+Détection des niveaux basée sur High/Low de la bougie (comme un vrai ordre limite),
+pas seulement sur le prix de clôture.
 """
 import pandas as pd
 import numpy as np
@@ -100,6 +102,8 @@ class GridTrendStrategy:
 
     def generate_signal(self, row: pd.Series) -> dict:
         price = row["close"]
+        candle_high = row.get("high", price)
+        candle_low = row.get("low", price)
 
         if abs(price - self.center_price) / self.center_price * 100 > config.GRID_RECENTER_THRESHOLD_PCT:
             self.center_price = price
@@ -119,9 +123,12 @@ class GridTrendStrategy:
         if buy_allowed:
             already_open_prices = {p["buy_price"] for p in self.open_grid_positions}
             for lv in buy_levels:
-                if abs(price - lv) / lv < 0.001 and lv not in already_open_prices:
+                # Comme un vrai ordre limite : se déclenche si le prix a traversé ce niveau
+                # PENDANT la bougie (entre son plus bas et son plus haut), pas seulement si
+                # la clôture tombe exactement dessus — sinon on rate presque tout.
+                if candle_low <= lv <= candle_high and lv not in already_open_prices:
                     self.open_grid_positions.append({"buy_price": lv, "spacing_pct": spacing_pct})
-                    return {"action": "BUY", "price": price, "size_usd": config.GRID_ORDER_SIZE_USD, "grid_level": lv}
+                    return {"action": "BUY", "price": lv, "size_usd": config.GRID_ORDER_SIZE_USD, "grid_level": lv}
 
         for pos in list(self.open_grid_positions):
             take_profit_price = pos["buy_price"] * (1 + pos["spacing_pct"] / 100)
@@ -130,14 +137,14 @@ class GridTrendStrategy:
                 sl_pct = pos["spacing_pct"] / config.STOP_LOSS_RATIO
                 stop_loss_price = pos["buy_price"] * (1 - sl_pct / 100)
 
-            if price >= take_profit_price:
+            if candle_high >= take_profit_price:
                 self.open_grid_positions.remove(pos)
-                return {"action": "SELL", "price": price, "size_usd": config.GRID_ORDER_SIZE_USD,
+                return {"action": "SELL", "price": take_profit_price, "size_usd": config.GRID_ORDER_SIZE_USD,
                         "grid_level": pos["buy_price"], "reason": "take_profit"}
 
-            if stop_loss_price is not None and price <= stop_loss_price:
+            if stop_loss_price is not None and candle_low <= stop_loss_price:
                 self.open_grid_positions.remove(pos)
-                return {"action": "SELL", "price": price, "size_usd": config.GRID_ORDER_SIZE_USD,
+                return {"action": "SELL", "price": stop_loss_price, "size_usd": config.GRID_ORDER_SIZE_USD,
                         "grid_level": pos["buy_price"], "reason": "stop_loss"}
 
         return {"action": None, "price": price, "size_usd": 0, "grid_level": None}
