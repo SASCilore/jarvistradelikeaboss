@@ -1,16 +1,5 @@
 """
 Point d'entrée pour l'exécution PÉRIODIQUE en autonomie (via GitHub Actions).
-
-Contrairement à main.py (qui rejoue tout un historique d'un coup pour le backtest),
-ce script :
-1. Charge l'état persistant du portefeuille (state/bot_state.json)
-2. Récupère les données récentes nécessaires (juste assez pour calculer les indicateurs)
-3. Évalue UN signal sur la dernière bougie
-4. Exécute le trade si signal (en paper trading — aucun ordre réel envoyé)
-5. Sauvegarde le nouvel état
-6. Envoie une notification Telegram si un trade a eu lieu, + un résumé une fois par jour
-
-Conçu pour être relancé toutes les ~15 min sans état en mémoire entre les appels.
 """
 from datetime import datetime, timezone
 
@@ -23,18 +12,27 @@ from telegram_notifier import notify_trade, notify_daily_summary, notify_error
 
 def run_once():
     try:
-        # Calcule combien de jours d'historique récupérer, en tenant compte de la
-        # fenêtre la plus large parmi tous les indicateurs (pas seulement la tendance),
-        # et de la durée réelle d'une bougie (TIMEFRAME_MINUTES).
+        # Calcule combien de jours d'historique récupérer. Deux exigences séparées :
+        # - les indicateurs sur bougies (ATR, RSI, tendance...), exprimés en nombre de bougies
+        # - le filtre de tendance journalière (HTF_MA_PERIOD), exprimé directement en jours
         largest_window_candles = max(config.TREND_MA_PERIOD, config.VOLATILITY_PERCENTILE_WINDOW)
-        minutes_needed = largest_window_candles * config.TIMEFRAME_MINUTES
-        lookback_days = max(10, (minutes_needed // (60 * 24)) + 5)  # +5 jours de marge de sécurité
+        days_from_candle_windows = (largest_window_candles * config.TIMEFRAME_MINUTES) // (60 * 24)
+        days_from_htf = config.HTF_MA_PERIOD if config.HTF_TREND_ENABLED else 0
+        lookback_days = max(10, days_from_candle_windows, days_from_htf) + 5  # marge de sécurité
+
         df = fetch_ohlcv(since_days=lookback_days)
+        print(f"[DIAGNOSTIC] Bougies récupérées : {len(df)} — nécessaire pour les indicateurs : ~{largest_window_candles}")
+
         df = add_indicators(df)
+        df_before_dropna = len(df)
         df = df.dropna(subset=["trend_ma"])
+        print(f"[DIAGNOSTIC] Lignes avant dropna : {df_before_dropna}, après dropna (trend_ma valide) : {len(df)}")
 
         if df.empty:
-            notify_error("Pas assez de données pour calculer les indicateurs, run ignoré.")
+            notify_error(
+                f"Pas assez de données pour calculer les indicateurs "
+                f"({df_before_dropna} bougies récupérées, ~{largest_window_candles} nécessaires) — run ignoré."
+            )
             return
 
         latest_row = df.iloc[-1]
