@@ -27,9 +27,11 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TEST_SECRET: ${{ secrets.TEST_SECRET }}
         run: |
           if [ -z "$TELEGRAM_BOT_TOKEN" ]; then echo "TOKEN: VIDE/ABSENT"; else echo "TOKEN: présent, longueur ${#TELEGRAM_BOT_TOKEN} caractères"; fi
           if [ -z "$TELEGRAM_CHAT_ID" ]; then echo "CHAT_ID: VIDE/ABSENT"; else echo "CHAT_ID: présent = $TELEGRAM_CHAT_ID"; fi
+          if [ -z "$TEST_SECRET" ]; then echo "TEST_SECRET: VIDE/ABSENT"; else echo "TEST_SECRET: présent, longueur ${#TEST_SECRET} caractères"; fi
 
       - name: Lancer le bot (un cycle)
         env:
