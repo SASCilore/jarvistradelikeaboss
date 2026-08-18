@@ -29,7 +29,11 @@ FEE_RATE = 0.0026         # taker fee Kraken ~0.26% (à ajuster selon ton tier)
 GRID_LEVELS = 10          # nombre de niveaux d'achat/vente au-dessus et en dessous du prix central
 GRID_SPACING_PCT = 0.5    # espacement de repli si l'ATR n'est pas disponible (warm-up)
 GRID_ORDER_SIZE_USD = 200 # taille d'un ordre à chaque niveau
-GRID_RECENTER_THRESHOLD_PCT = 5.0  # recentre le grid si le prix s'écarte de plus de X% du centre actuel
+GRID_RECENTER_THRESHOLD_PCT = 25.0  # recentre le grid seulement si le prix s'écarte de plus de
+                                     # 25% du centre — largement au-delà de l'espacement des niveaux
+                                     # (2,5%+), pour que le grid reste stable et que les niveaux
+                                     # aient le temps d'être retouchés plusieurs fois (10 niveaux
+                                     # à 2,5% chacun = jusqu'à ~25% de couverture avant recentrage)
 
 # --- ATR : espacement de grid dynamique selon la volatilité réelle (= take-profit par position) ---
 ATR_PERIOD = 56   # équivalent à 14h en bougies de 15min (14*4)
