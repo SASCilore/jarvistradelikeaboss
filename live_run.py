@@ -1,71 +1,4 @@
-"""
-Point d'entrée pour l'exécution PÉRIODIQUE en autonomie (via GitHub Actions).
-"""
-from datetime import datetime, timezone
-
-import config
-from data_fetcher import fetch_ohlcv
-from strategy import add_indicators, GridTrendStrategy
-from state_manager import load_state, save_state, append_trade_log
-from telegram_notifier import notify_trade, notify_daily_summary, notify_error
-
-
-def run_once():
-    try:
-        lookback_days = max(10, (config.TREND_MA_PERIOD // 24) + 5)
-        df = fetch_ohlcv(since_days=lookback_days)
-        df = add_indicators(df)
-        df = df.dropna(subset=["trend_ma"])
-
-        if df.empty:
-            notify_error("Pas assez de données pour calculer les indicateurs, run ignoré.")
-            return
-
-        latest_row = df.iloc[-1]
-        current_price = latest_row["close"]
-
-        state = load_state(fallback_center_price=current_price)
-
-        strat = GridTrendStrategy(state["center_price"])
-        strat.open_grid_positions = state["open_grid_positions"]
-
-        signal = strat.generate_signal(latest_row)
-
-        if signal["action"] == "BUY" and state["cash"] >= signal["size_usd"]:
-            fee = signal["size_usd"] * config.FEE_RATE
-            btc_bought = (signal["size_usd"] - fee) / signal["price"]
-            state["cash"] -= signal["size_usd"]
-            state["btc_holdings"] += btc_bought
-            trade = {
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "action": "BUY", "price": signal["price"],
-                "size_usd": signal["size_usd"], "fee": fee, "btc_amount": btc_bought,
-            }
-            append_trade_log(trade)
-            notify_trade("BUY", signal["price"], signal["size_usd"], state["cash"], state["btc_holdings"])
-            print(f"BUY exécuté @ {signal['price']}")
-
-        elif signal["action"] == "SELL" and state["btc_holdings"] > 0:
-            btc_to_sell = min(signal["size_usd"] / signal["price"], state["btc_holdings"])
-            proceeds = btc_to_sell * signal["price"]
-            fee = proceeds * config.FEE_RATE
-            state["cash"] += proceeds - fee
-            state["btc_holdings"] -= btc_to_sell
-            trade = {
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "action": "SELL", "price": signal["price"],
-                "size_usd": proceeds, "fee": fee, "btc_amount": btc_to_sell,
-            }
-            append_trade_log(trade)
-            notify_trade("SELL", signal["price"], proceeds, state["cash"], state["btc_holdings"])
-            print(f"SELL exécuté @ {signal['price']}")
-
-        else:
-            print(f"Aucun signal @ {current_price} — rien à faire ce run.")
-
-        state["open_grid_positions"] = strat.open_grid_positions
-
-        today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         if state.get("last_summary_date") != today_str:
             equity = state["cash"] + state["btc_holdings"] * current_price
             report = {
@@ -76,15 +9,10 @@ def run_once():
                 "equite_totale_usd": round(equity, 2),
                 "positions_grid_ouvertes": len(state["open_grid_positions"]),
             }
-            notify_daily_summary(report)
-            state["last_summary_date"] = today_str
+            sent_ok = notify_daily_summary(report)
+            if sent_ok:
+                state["last_summary_date"] = today_str
+            else:
+                print("Résumé quotidien non envoyé — nouvelle tentative au prochain run.")
 
         save_state(state)
-
-    except Exception as e:
-        notify_error(str(e))
-        raise
-
-
-if __name__ == "__main__":
-    run_once()
