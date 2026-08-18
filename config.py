@@ -4,11 +4,20 @@ Modifie ces valeurs pour ajuster le comportement sans toucher au reste du code.
 """
 
 # --- Marché ---
-EXCHANGE = "kraken"
+EXCHANGE = "kraken"       # exchange utilisé pour l'exécution LIVE (paper puis réel plus tard)
 SYMBOL = "BTC/USD"
 TIMEFRAME = "15m"         # granularité des bougies (1m, 5m, 15m, 1h, 4h, 1d...)
 TIMEFRAME_MINUTES = 15    # doit correspondre à TIMEFRAME — utilisé pour calculer combien
                            # de jours d'historique récupérer selon les périodes ci-dessous
+
+# --- Source de données pour le BACKTEST uniquement (analyse historique) ---
+# Kraken limite son API publique à ~720 bougies par requête, peu importe la période
+# demandée (~7,5 jours seulement en 15min) — insuffisant pour un vrai backtest.
+# Binance permet une vraie pagination en profondeur sur son historique complet.
+# Le bot live continue d'utiliser Kraken (EXCHANGE ci-dessus) — seule l'analyse
+# historique utilise une source différente, BTC/USD étant très corrélé entre exchanges.
+BACKTEST_EXCHANGE = "binance"
+BACKTEST_SYMBOL = "BTC/USDT"   # Binance n'a pas de paire BTC/USD directe, USDT est l'équivalent
 
 # --- Capital simulé (paper trading) ---
 STARTING_BALANCE_USD = 10_000.0
