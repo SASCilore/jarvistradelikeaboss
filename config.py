@@ -13,11 +13,13 @@ TIMEFRAME_MINUTES = 15    # doit correspondre à TIMEFRAME — utilisé pour cal
 # --- Source de données pour le BACKTEST uniquement (analyse historique) ---
 # Kraken limite son API publique à ~720 bougies par requête, peu importe la période
 # demandée (~7,5 jours seulement en 15min) — insuffisant pour un vrai backtest.
-# Binance permet une vraie pagination en profondeur sur son historique complet.
+# Binance a été testé mais bloque les requêtes depuis les serveurs GitHub Actions
+# (erreur 451, restriction géographique côté Binance). Coinbase (société américaine,
+# pas de blocage depuis les serveurs GitHub) permet une vraie pagination en profondeur.
 # Le bot live continue d'utiliser Kraken (EXCHANGE ci-dessus) — seule l'analyse
 # historique utilise une source différente, BTC/USD étant très corrélé entre exchanges.
-BACKTEST_EXCHANGE = "binance"
-BACKTEST_SYMBOL = "BTC/USDT"   # Binance n'a pas de paire BTC/USD directe, USDT est l'équivalent
+BACKTEST_EXCHANGE = "coinbase"
+BACKTEST_SYMBOL = "BTC/USD"
 
 # --- Capital simulé (paper trading) ---
 STARTING_BALANCE_USD = 10_000.0
