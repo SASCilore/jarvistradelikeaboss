@@ -39,6 +39,7 @@ def save_state(state: dict):
 
 
 def append_trade_log(trade: dict, path: str = "state/trades_history.csv"):
+    """Ajoute une ligne au journal complet des trades (append-only, jamais écrasé)."""
     import csv
     os.makedirs(os.path.dirname(path), exist_ok=True)
     file_exists = os.path.exists(path)
@@ -47,3 +48,24 @@ def append_trade_log(trade: dict, path: str = "state/trades_history.csv"):
         if not file_exists:
             writer.writeheader()
         writer.writerow(trade)
+
+
+def append_equity_snapshot(timestamp: str, price: float, cash: float, btc_holdings: float,
+                            path: str = "state/equity_history.csv"):
+    """Enregistre la valeur totale du portefeuille à CHAQUE run (trade ou non)."""
+    import csv
+    equity = cash + btc_holdings * price
+    row = {
+        "timestamp": timestamp,
+        "btc_price": round(price, 2),
+        "cash": round(cash, 2),
+        "btc_holdings": round(btc_holdings, 8),
+        "equity": round(equity, 2),
+    }
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    file_exists = os.path.exists(path)
+    with open(path, "a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=list(row.keys()))
+        if not file_exists:
+            writer.writeheader()
+        writer.writerow(row)
