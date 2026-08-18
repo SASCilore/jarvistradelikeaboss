@@ -1,29 +1,17 @@
 """
 Point d'entrée pour l'exécution PÉRIODIQUE en autonomie (via GitHub Actions).
-
-Contrairement à main.py (qui rejoue tout un historique d'un coup pour le backtest),
-ce script :
-1. Charge l'état persistant du portefeuille (state/bot_state.json)
-2. Récupère les données récentes nécessaires (juste assez pour calculer la moyenne mobile)
-3. Évalue UN signal sur la dernière bougie
-4. Exécute le trade si signal (en paper trading — aucun ordre réel envoyé)
-5. Sauvegarde le nouvel état
-6. Envoie une notification Telegram si un trade a eu lieu, + un résumé une fois par jour
-
-Conçu pour être relancé toutes les ~15 min sans état en mémoire entre les appels.
 """
 from datetime import datetime, timezone
 
 import config
 from data_fetcher import fetch_ohlcv
 from strategy import add_indicators, GridTrendStrategy
-from state_manager import load_state, save_state, append_trade_log
+from state_manager import load_state, save_state, append_trade_log, append_equity_snapshot
 from telegram_notifier import notify_trade, notify_daily_summary, notify_error
 
 
 def run_once():
     try:
-        # On récupère un peu plus que TREND_MA_PERIOD bougies pour que la moyenne mobile soit valide
         lookback_days = max(10, (config.TREND_MA_PERIOD // 24) + 5)
         df = fetch_ohlcv(since_days=lookback_days)
         df = add_indicators(df)
@@ -75,10 +63,11 @@ def run_once():
         else:
             print(f"Aucun signal @ {current_price} — rien à faire ce run.")
 
-        # Met à jour les positions ouvertes du grid dans l'état persistant
         state["open_grid_positions"] = strat.open_grid_positions
 
-        # Résumé quotidien Telegram (une seule fois par jour, pas à chaque run)
+        run_timestamp = datetime.now(timezone.utc).isoformat()
+        append_equity_snapshot(run_timestamp, current_price, state["cash"], state["btc_holdings"])
+
         today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         if state.get("last_summary_date") != today_str:
             equity = state["cash"] + state["btc_holdings"] * current_price
