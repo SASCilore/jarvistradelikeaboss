@@ -29,11 +29,11 @@ def load_or_fetch_data() -> pd.DataFrame:
 
     print("Connexion à IG pour récupérer l'historique EUR/USD...")
     ig_service = get_ig_service()
-    # 700 points (~23 requêtes) — l'échec systématique à la 26e requête, peu importe
-    # le rythme, révèle un plafond FIXE d'environ 25 pages par appel unique (pas un
-    # problème de vitesse). On reste prudemment sous ce plafond plutôt que d'essayer
-    # de le contourner par la vitesse (inefficace, on l'a vérifié).
-    df = fetch_ohlcv_ig(ig_service, config.FOREX_EPIC, resolution="15Min", num_points=700)
+    # 550 points (~20 requêtes) — chaque page contient ~27 points, et le plafond
+    # réel se situe autour de 25-26 pages par appel unique, peu importe la vitesse
+    # (confirmé : notre ajustement de rythme n'a rien changé, ce n'est pas un
+    # problème de timing). On vise ~20 pages pour une vraie marge de sécurité.
+    df = fetch_ohlcv_ig(ig_service, config.FOREX_EPIC, resolution="15Min", num_points=550)
     os.makedirs("data", exist_ok=True)
     df.to_csv(DATA_PATH)
     print(f"-> {len(df)} bougies récupérées et sauvegardées.")
