@@ -29,17 +29,19 @@ BACKTEST_SYMBOL = "BTC/USD"
 
 # --- Capital simulé (paper trading) ---
 STARTING_BALANCE_USD = 10_000.0
-FEE_RATE = 0.0026         # taker fee Kraken ~0.26% (à ajuster selon ton tier)
+FEE_RATE = 0.0026         # taker fee Kraken ~0.26% (BTC uniquement, ne pas utiliser pour le forex)
+FOREX_FEE_RATE = 0.000043 # coût forex (spread IG ~0,0086% aller-retour ÷ 2, car appliqué sur
+                           # chaque jambe achat/vente séparément) — 60x moins cher que la crypto
 
 # --- Grid trading ---
 GRID_LEVELS = 10          # nombre de niveaux d'achat/vente au-dessus et en dessous du prix central
 GRID_SPACING_PCT = 0.5    # espacement de repli si l'ATR n'est pas disponible (warm-up)
 GRID_ORDER_SIZE_USD = 200 # taille d'un ordre à chaque niveau
-GRID_RECENTER_THRESHOLD_PCT = 25.0  # recentre le grid seulement si le prix s'écarte de plus de
-                                     # 25% du centre — largement au-delà de l'espacement des niveaux
-                                     # (2,5%+), pour que le grid reste stable et que les niveaux
-                                     # aient le temps d'être retouchés plusieurs fois (10 niveaux
-                                     # à 2,5% chacun = jusqu'à ~25% de couverture avant recentrage)
+GRID_RECENTER_THRESHOLD_PCT = 1.0  # recentre le grid si le prix s'écarte de plus de 1% du
+                                    # centre — recalibré pour EUR/USD (l'ancien 25% était calé
+                                    # sur le BTC ; sur EUR/USD, un mouvement de 25% n'arrive
+                                    # jamais, donc le grid ne se recentrait plus jamais et
+                                    # devenait hors de portée du prix après un simple 1,13% de dérive)
 
 # --- ATR : espacement de grid dynamique selon la volatilité réelle (= take-profit par position) ---
 ATR_PERIOD = 56   # équivalent à 14h en bougies de 15min (14*4)
