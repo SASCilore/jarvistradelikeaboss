@@ -29,11 +29,9 @@ def load_or_fetch_data() -> pd.DataFrame:
 
     print("Connexion à IG pour récupérer l'historique EUR/USD...")
     ig_service = get_ig_service()
-    # Réduit à 300 points (~8-9 requêtes) — le rate limiter intégré à la librairie
-    # s'est basé sur la limite "live" (30/min) alors que le compte démo est plus
-    # restrictif en pratique (~10/min réel), d'où un 403 avec 1000 points (28 requêtes).
-    # On reste prudent ici, on augmentera progressivement une fois la fiabilité confirmée.
-    df = fetch_ohlcv_ig(ig_service, config.FOREX_EPIC, resolution="15Min", num_points=300)
+    # 500 points (~15 requêtes) — le run précédent à 300 points (15 requêtes) a
+    # fonctionné sans erreur, on augmente prudemment pour dépasser TREND_MA_PERIOD=384.
+    df = fetch_ohlcv_ig(ig_service, config.FOREX_EPIC, resolution="15Min", num_points=500)
     os.makedirs("data", exist_ok=True)
     df.to_csv(DATA_PATH)
     print(f"-> {len(df)} bougies récupérées et sauvegardées.")
