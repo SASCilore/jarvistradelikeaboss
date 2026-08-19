@@ -93,35 +93,31 @@ def run_backtest():
 
     diagnose_filters(df_full)
 
-    # Instrumentation détaillée : pour chaque bougie, calcule la distance réelle
-    # entre le prix et le niveau d'achat le plus proche, pour voir si on est
-    # proche (quasi-miss) ou complètement à côté de la plaque.
+    # Instrumentation corrigée : reproduit EXACTEMENT la logique réelle de
+    # generate_signal (même recentrage, même condition low<=niveau<=high pour
+    # TOUS les niveaux d'achat, pas juste le plus proche) — la version précédente
+    # testait une condition trop stricte et ne reflétait pas fidèlement le code réel.
     from strategy import build_grid
-    center_price = df_full["close"].iloc[0]
-    min_distances = []
-    filter_and_close = 0
+    diag_center = df_full["close"].iloc[0]
+    candles_with_level_in_range = 0
     for timestamp, row in df_full.iterrows():
+        price = row["close"]
+        if abs(price - diag_center) / diag_center * 100 > config.GRID_RECENTER_THRESHOLD_PCT:
+            diag_center = price
+
         spacing_pct = row.get("atr_spacing_pct", config.GRID_SPACING_PCT)
         if pd.isna(spacing_pct):
             spacing_pct = config.GRID_SPACING_PCT
-        grid_levels = build_grid(center_price, config.GRID_LEVELS, spacing_pct)
-        buy_levels = [lv for lv in grid_levels if lv < center_price]
-        if buy_levels:
-            closest = min(buy_levels, key=lambda lv: abs(row["close"] - lv))
-            dist_pct = abs(row["close"] - closest) / closest * 100
-            min_distances.append(dist_pct)
-            # Est-ce que le low de la bougie était à moins de 0,05% du niveau le plus proche ?
-            if abs(row["low"] - closest) / closest * 100 < 0.05:
-                filter_and_close += 1
-        if abs(row["close"] - center_price) / center_price * 100 > config.GRID_RECENTER_THRESHOLD_PCT:
-            center_price = row["close"]
+        grid_levels = build_grid(diag_center, config.GRID_LEVELS, spacing_pct)
+        buy_levels = [lv for lv in grid_levels if lv < diag_center]
 
-    import statistics
-    print(f"\n=== Instrumentation : distance au niveau d'achat le plus proche ===")
-    print(f"Distance moyenne (% du prix) : {statistics.mean(min_distances):.4f}%")
-    print(f"Distance minimale observée : {min(min_distances):.4f}%")
-    print(f"Distance médiane : {statistics.median(min_distances):.4f}%")
-    print(f"Bougies où le Low était à <0,05% d'un niveau : {filter_and_close} / {len(df_full)}")
+        # Vraie condition du code : le niveau est-il CONTENU entre low et high ?
+        if any(row["low"] <= lv <= row["high"] for lv in buy_levels):
+            candles_with_level_in_range += 1
+
+    print(f"\n=== Instrumentation corrigée (vraie condition low<=niveau<=high) ===")
+    print(f"Bougies où au moins un niveau d'achat était dans la fourchette Low-High : "
+          f"{candles_with_level_in_range} / {len(df_full)} ({candles_with_level_in_range/len(df_full)*100:.2f}%)")
 
     center_price = df_full["close"].iloc[0]
     strat = GridTrendStrategy(center_price)
