@@ -56,8 +56,8 @@ STOP_LOSS_RATIO = 2.5   # recalibré pour EUR/USD : avec TP~0,072% (2xATR) et ra
 
 # --- Coupe-circuit volatilité extrême (flash crash / news choc) ---
 VOLATILITY_HALT_ENABLED = True
-VOLATILITY_PERCENTILE_WINDOW = 480   # ~5 jours en bougies de 15min — réduit pour tenir
-                                       # confortablement dans les limites de récupération de Kraken
+VOLATILITY_PERCENTILE_WINDOW = 200   # réduit (était 480) pour la même raison que TREND_MA_PERIOD —
+                                       # tenir confortablement dans le plafond de 500 points par appel IG
 VOLATILITY_HALT_PERCENTILE = 95      # au-dessus de ce percentile d'ATR historique, le bot arrête d'acheter
 
 # --- RSI : évite d'acheter en zone de surachat ---
@@ -77,7 +77,9 @@ VOLUME_MA_PERIOD = 80   # équivalent à 20h en bougies de 15min
 VOLUME_MIN_RATIO = 1.0   # volume actuel doit être >= VOLUME_MA * ce ratio pour valider un achat
 
 # --- Filtre de tendance ---
-TREND_MA_PERIOD = 384     # ~4 jours (96h) en bougies de 15min — réduit pour tenir avec marge
+TREND_MA_PERIOD = 150     # réduit (était 384) pour libérer plus de bougies utilisables sur
+                           # les 500 max récupérables par appel IG (384 en mangeait la majorité,
+                           # ne laissant que 116 bougies exploitables sur 500 récupérées)
 TREND_FILTER_ENABLED = True
 
 # --- Filtre de tendance multi-timeframe (tendance journalière, indépendante du bruit horaire) ---
