@@ -29,9 +29,9 @@ def load_or_fetch_data() -> pd.DataFrame:
 
     print("Connexion à IG pour récupérer l'historique EUR/USD...")
     ig_service = get_ig_service()
-    # 500 points (~15 requêtes) — le run précédent à 300 points (15 requêtes) a
-    # fonctionné sans erreur, on augmente prudemment pour dépasser TREND_MA_PERIOD=384.
-    df = fetch_ohlcv_ig(ig_service, config.FOREX_EPIC, resolution="15Min", num_points=500)
+    # 800 points (~25 requêtes) — le run précédent à 500 points (25 requêtes) est
+    # passé sans erreur, on augmente pour avoir un échantillon plus significatif.
+    df = fetch_ohlcv_ig(ig_service, config.FOREX_EPIC, resolution="15Min", num_points=800)
     os.makedirs("data", exist_ok=True)
     df.to_csv(DATA_PATH)
     print(f"-> {len(df)} bougies récupérées et sauvegardées.")
@@ -94,7 +94,7 @@ def run_backtest():
 
     center_price = df_full["close"].iloc[0]
     strat = GridTrendStrategy(center_price)
-    engine = PaperTradingEngine()
+    engine = PaperTradingEngine(fee_rate=config.FOREX_FEE_RATE)
 
     for timestamp, row in df_full.iterrows():
         signal = strat.generate_signal(row)
