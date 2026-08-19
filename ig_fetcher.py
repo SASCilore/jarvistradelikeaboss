@@ -1,6 +1,9 @@
 """
 Connexion à l'API IG (CFD forex) et récupération des données de prix.
 Remplace data_fetcher.py (Kraken/ccxt) pour la partie forex.
+
+IG nécessite une authentification par session (pas d'accès public anonyme,
+contrairement à Kraken) — d'où la classe IGConnection qui gère la connexion.
 """
 import os
 import pandas as pd
@@ -10,6 +13,11 @@ import config
 
 
 def get_ig_service() -> IGService:
+    """
+    Crée et authentifie une session IG. À appeler une fois par run (le token
+    de session dure plusieurs heures mais on repart de zéro à chaque exécution
+    GitHub Actions de toute façon, comme pour Kraken).
+    """
     username = os.environ.get("IG_USERNAME")
     password = os.environ.get("IG_PASSWORD")
     api_key = os.environ.get("IG_API_KEY")
@@ -20,12 +28,17 @@ def get_ig_service() -> IGService:
             "et IG_API_KEY sont bien configurés (variables d'env ou secrets GitHub)."
         )
 
-    ig_service = IGService(username, password, api_key, acc_type=config.IG_ACC_TYPE)
+    # use_rate_limiter active l'espacement automatique des requêtes selon les
+    # limites réelles du compte (le compte démo est bien plus restrictif que ce
+    # que la doc IG publie — environ 10 requêtes/minute au lieu de 30-60).
+    ig_service = IGService(username, password, api_key, acc_type=config.IG_ACC_TYPE, use_rate_limiter=True)
     ig_service.create_session()
+    ig_service.setup_rate_limiter()
     return ig_service
 
 
 def find_epic(ig_service: IGService, search_term: str) -> str:
+    """Cherche l'identifiant IG ('epic') d'un instrument à partir d'un terme de recherche."""
     results = ig_service.search_markets(search_term)
     print(f"Résultats de recherche pour '{search_term}':")
     for _, row in results.iterrows():
@@ -34,6 +47,7 @@ def find_epic(ig_service: IGService, search_term: str) -> str:
 
 
 def fetch_current_price(ig_service: IGService, epic: str) -> dict:
+    """Récupère le prix actuel (bid/ask) d'un instrument."""
     market = ig_service.fetch_market_by_epic(epic)
     snapshot = market["snapshot"]
     return {
@@ -44,6 +58,11 @@ def fetch_current_price(ig_service: IGService, epic: str) -> dict:
 
 
 def fetch_historical_prices(ig_service: IGService, epic: str, resolution: str, num_points: int) -> pd.DataFrame:
+    """
+    Récupère l'historique de prix. resolution ex: 'MINUTE_15', 'HOUR', 'DAY'.
+    IG limite à 30 requêtes/minute et 10 000 points/semaine — à garder en tête
+    pour ne pas demander des historiques trop longs d'un coup.
+    """
     response = ig_service.fetch_historical_prices_by_epic(epic, resolution=resolution, numpoints=num_points)
     df = response["prices"]
     df = df.copy()
