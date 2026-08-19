@@ -5,6 +5,7 @@ Modifie ces valeurs pour ajuster le comportement sans toucher au reste du code.
 
 # --- IG (broker forex — remplace Kraken pour l'exécution live) ---
 IG_ACC_TYPE = "DEMO"   # "DEMO" ou "LIVE" — on reste en DEMO tant qu'on valide la stratégie
+FOREX_EPIC = "CS.D.EURUSD.CEF.IP"   # identifiant IG pour EUR/USD (trouvé via diagnose_ig.py)
 # Les identifiants (IG_USERNAME, IG_PASSWORD, IG_API_KEY) se configurent en variables
 # d'environnement / secrets GitHub, jamais ici en dur.
 
