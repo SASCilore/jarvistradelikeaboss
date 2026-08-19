@@ -29,11 +29,14 @@ def get_ig_service() -> IGService:
         )
 
     # use_rate_limiter active l'espacement automatique des requêtes selon les
-    # limites réelles du compte (le compte démo est bien plus restrictif que ce
-    # que la doc IG publie — environ 10 requêtes/minute au lieu de 30-60).
+    # limites réelles du compte. Observé empiriquement : le compte démo tolère
+    # ~25 requêtes/minute avant un 403, mais le limiteur auto-détecté par la
+    # librairie se cale sur 28 (légèrement trop optimiste) — on force donc un
+    # rythme plus prudent (18/min) après coup, avec marge de sécurité.
     ig_service = IGService(username, password, api_key, acc_type=config.IG_ACC_TYPE, use_rate_limiter=True)
     ig_service.create_session()
     ig_service.setup_rate_limiter()
+    ig_service._non_trading_requests_per_minute = 18
     return ig_service
 
 
