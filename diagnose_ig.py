@@ -20,7 +20,7 @@ if len(results) > 0:
     print(f"Prix actuel : bid={price['bid']}, offer={price['offer']}, mid={price['mid']}")
 
     print(f"\nTest de récupération de bougies OHLCV (15 dernières bougies 15min)...")
-    df = fetch_ohlcv_ig(ig_service, first_epic, resolution="MINUTE_15", num_points=15)
+    df = fetch_ohlcv_ig(ig_service, first_epic, resolution="15Min", num_points=15)
     print(df.tail(10))
     print(f"\nColonnes: {list(df.columns)}")
     print(f"Nombre de lignes: {len(df)}")
