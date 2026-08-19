@@ -44,8 +44,44 @@ def fetch_current_price(ig_service: IGService, epic: str) -> dict:
 
 
 def fetch_historical_prices(ig_service: IGService, epic: str, resolution: str, num_points: int) -> pd.DataFrame:
+    """
+    Récupère l'historique de prix. resolution ex: 'MINUTE_15', 'HOUR', 'DAY'.
+    IG limite à 30 requêtes/minute et 10 000 points/semaine — à garder en tête
+    pour ne pas demander des historiques trop longs d'un coup.
+    """
     response = ig_service.fetch_historical_prices_by_epic(epic, resolution=resolution, numpoints=num_points)
     df = response["prices"]
     df = df.copy()
     df.columns = ["_".join(col).strip() if isinstance(col, tuple) else col for col in df.columns]
+    return df
+
+
+def fetch_ohlcv_ig(ig_service: IGService, epic: str, resolution: str = "MINUTE_15",
+                    num_points: int = 500) -> pd.DataFrame:
+    """
+    Récupère des bougies et les formate en OHLCV standard (open/high/low/close/volume,
+    indexé par timestamp) — même format que data_fetcher.fetch_ohlcv (Kraken), pour
+    rester compatible avec strategy.add_indicators() et le reste du pipeline existant.
+
+    IG fournit des prix bid ET ask séparément (pas un prix unique comme les exchanges
+    crypto) — on utilise le prix moyen (mid = (bid+ask)/2) pour chaque valeur OHLC.
+    Le "volume" IG représente le nombre de mises à jour de prix dans la période
+    (proxy d'activité), pas un vrai volume de transactions comme en crypto.
+    """
+    response = ig_service.fetch_historical_prices_by_epic(epic, resolution=resolution, numpoints=num_points)
+    raw = response["prices"]
+
+    df = pd.DataFrame(index=raw.index)
+    for col in ["Open", "High", "Low", "Close"]:
+        bid = raw[("bid", col)]
+        ask = raw[("ask", col)]
+        df[col.lower()] = (bid + ask) / 2
+
+    if ("last", "Volume") in raw.columns:
+        df["volume"] = raw[("last", "Volume")]
+    else:
+        df["volume"] = 1.0  # repli si IG ne fournit pas de volume pour cet instrument
+
+    df.index.name = "timestamp"
+    df.index = pd.to_datetime(df.index)
     return df
