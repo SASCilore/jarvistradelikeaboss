@@ -1,10 +1,12 @@
 """
 Backtest forex (EUR/USD via IG) — réutilise la même stratégie, le même moteur de
-paper trading et le même dashboard que le bot BTC.
+paper trading et le même dashboard que le bot BTC (strategy.py, paper_engine.py,
+dashboard.py sont génériques, indépendants de l'actif tradé).
 
 Usage : python main_forex.py
 """
 import os
+import logging
 import pandas as pd
 
 import config
@@ -12,6 +14,10 @@ from ig_fetcher import get_ig_service, fetch_ohlcv_ig
 from strategy import add_indicators, GridTrendStrategy
 from paper_engine import PaperTradingEngine
 from dashboard import generate_dashboard
+
+# Affiche les logs internes de la librairie trading_ig, notamment le quota
+# restant de données historiques ("Historic price data allowance: X remaining")
+logging.basicConfig(level=logging.INFO, format="%(message)s")
 
 DATA_PATH = "data/eurusd_history.csv"
 
@@ -23,7 +29,10 @@ def load_or_fetch_data() -> pd.DataFrame:
 
     print("Connexion à IG pour récupérer l'historique EUR/USD...")
     ig_service = get_ig_service()
-    df = fetch_ohlcv_ig(ig_service, config.FOREX_EPIC, resolution="15Min", num_points=1000)
+    # Réduit à 200 points (~2 jours en 15min) suite à un quota IG épuisé par nos
+    # tests précédents — on augmentera une fois le quota reconstitué (visible
+    # dans les logs ci-dessus, "Historic price data allowance").
+    df = fetch_ohlcv_ig(ig_service, config.FOREX_EPIC, resolution="15Min", num_points=200)
     os.makedirs("data", exist_ok=True)
     df.to_csv(DATA_PATH)
     print(f"-> {len(df)} bougies récupérées et sauvegardées.")
