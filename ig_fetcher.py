@@ -44,11 +44,6 @@ def fetch_current_price(ig_service: IGService, epic: str) -> dict:
 
 
 def fetch_historical_prices(ig_service: IGService, epic: str, resolution: str, num_points: int) -> pd.DataFrame:
-    """
-    Récupère l'historique de prix. resolution ex: 'MINUTE_15', 'HOUR', 'DAY'.
-    IG limite à 30 requêtes/minute et 10 000 points/semaine — à garder en tête
-    pour ne pas demander des historiques trop longs d'un coup.
-    """
     response = ig_service.fetch_historical_prices_by_epic(epic, resolution=resolution, numpoints=num_points)
     df = response["prices"]
     df = df.copy()
@@ -56,12 +51,16 @@ def fetch_historical_prices(ig_service: IGService, epic: str, resolution: str, n
     return df
 
 
-def fetch_ohlcv_ig(ig_service: IGService, epic: str, resolution: str = "MINUTE_15",
+def fetch_ohlcv_ig(ig_service: IGService, epic: str, resolution: str = "15Min",
                     num_points: int = 500) -> pd.DataFrame:
     """
     Récupère des bougies et les formate en OHLCV standard (open/high/low/close/volume,
     indexé par timestamp) — même format que data_fetcher.fetch_ohlcv (Kraken), pour
     rester compatible avec strategy.add_indicators() et le reste du pipeline existant.
+
+    IMPORTANT : la librairie trading_ig attend un format de résolution "façon pandas"
+    (ex: "15Min", "1h", "D") et le convertit elle-même en interne vers le format natif
+    IG ("MINUTE_15", "HOUR", "DAY") — ne PAS lui passer directement le format IG.
 
     IG fournit des prix bid ET ask séparément (pas un prix unique comme les exchanges
     crypto) — on utilise le prix moyen (mid = (bid+ask)/2) pour chaque valeur OHLC.
