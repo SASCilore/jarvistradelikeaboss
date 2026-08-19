@@ -29,10 +29,9 @@ def load_or_fetch_data() -> pd.DataFrame:
 
     print("Connexion à IG pour récupérer l'historique EUR/USD...")
     ig_service = get_ig_service()
-    # Réduit à 200 points (~2 jours en 15min) suite à un quota IG épuisé par nos
-    # tests précédents — on augmentera une fois le quota reconstitué (visible
-    # dans les logs ci-dessus, "Historic price data allowance").
-    df = fetch_ohlcv_ig(ig_service, config.FOREX_EPIC, resolution="15Min", num_points=200)
+    # Quota vérifié : ~9225/10000 restants cette semaine, largement de quoi
+    # récupérer 1000 points (nécessaire pour couvrir les fenêtres des indicateurs).
+    df = fetch_ohlcv_ig(ig_service, config.FOREX_EPIC, resolution="15Min", num_points=1000)
     os.makedirs("data", exist_ok=True)
     df.to_csv(DATA_PATH)
     print(f"-> {len(df)} bougies récupérées et sauvegardées.")
