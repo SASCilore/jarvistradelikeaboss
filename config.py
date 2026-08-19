@@ -43,16 +43,14 @@ GRID_RECENTER_THRESHOLD_PCT = 25.0  # recentre le grid seulement si le prix s'é
 
 # --- ATR : espacement de grid dynamique selon la volatilité réelle (= take-profit par position) ---
 ATR_PERIOD = 56   # équivalent à 14h en bougies de 15min (14*4)
-ATR_GRID_MULTIPLIER = 1.0   # espacement du grid = ATR% * ce multiplicateur (plus haut = grid plus large)
-ATR_MIN_SPACING_PCT = 2.5   # plancher du take-profit — calibré pour un ratio 3:1 brut avec
-                             # le stop-loss (~1,46:1 net après frais), en gardant des trades
-                             # raisonnablement fréquents (mouvements de 2,5% pas rares sur BTC)
+ATR_GRID_MULTIPLIER = 2.0   # recalibré pour EUR/USD : TP visé ≈ 2x l'ATR réel (~0,036% observé)
+ATR_MIN_SPACING_PCT = 0.03  # garde-fou bas (pas le seuil réel) — l'ancien 2,5% était calé sur
+                             # le BTC et écrasait complètement la vraie volatilité EUR/USD (~70x trop haut)
 
 # --- Stop-loss par position ---
 STOP_LOSS_ENABLED = True
-STOP_LOSS_RATIO = 3.0   # le stop-loss = take-profit / ce ratio → avec TP~2,5% et ratio 3,
-                          # SL~0,83% ; ratio brut 3:1, net après frais (~0,52% aller-retour) ≈ 1,46:1
-                          # Seuil de rentabilité (win rate minimum) avec ces chiffres : ~40,5%
+STOP_LOSS_RATIO = 2.5   # recalibré pour EUR/USD : avec TP~0,072% (2xATR) et ratio 2,5,
+                          # SL~0,029% ; net après spread IG (~0,0086% aller-retour) ≈ 1,7:1
 
 # --- Coupe-circuit volatilité extrême (flash crash / news choc) ---
 VOLATILITY_HALT_ENABLED = True
