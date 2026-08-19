@@ -29,9 +29,11 @@ def load_or_fetch_data() -> pd.DataFrame:
 
     print("Connexion à IG pour récupérer l'historique EUR/USD...")
     ig_service = get_ig_service()
-    # Quota vérifié : ~9225/10000 restants cette semaine, largement de quoi
-    # récupérer 1000 points (nécessaire pour couvrir les fenêtres des indicateurs).
-    df = fetch_ohlcv_ig(ig_service, config.FOREX_EPIC, resolution="15Min", num_points=1000)
+    # Réduit à 300 points (~8-9 requêtes) — le rate limiter intégré à la librairie
+    # s'est basé sur la limite "live" (30/min) alors que le compte démo est plus
+    # restrictif en pratique (~10/min réel), d'où un 403 avec 1000 points (28 requêtes).
+    # On reste prudent ici, on augmentera progressivement une fois la fiabilité confirmée.
+    df = fetch_ohlcv_ig(ig_service, config.FOREX_EPIC, resolution="15Min", num_points=300)
     os.makedirs("data", exist_ok=True)
     df.to_csv(DATA_PATH)
     print(f"-> {len(df)} bougies récupérées et sauvegardées.")
@@ -70,20 +72,33 @@ def diagnose_volatility(df: pd.DataFrame):
 def run_backtest():
     df = load_or_fetch_data()
     df = add_indicators(df)
-    df = df.dropna(subset=["trend_ma"])
 
-    if df.empty:
-        print("Pas assez de données après calcul des indicateurs — réduis les périodes dans config.py.")
+    # Le diagnostic de volatilité n'a besoin que de l'ATR (warm-up court, ATR_PERIOD
+    # bougies) — utile même si on n'a pas encore assez de données pour le backtest complet.
+    atr_ready = df.dropna(subset=["atr"])
+    if atr_ready.empty:
+        print(f"Pas assez de données même pour l'ATR (besoin de ~{config.ATR_PERIOD} bougies, "
+              f"{len(df)} récupérées). Augmente num_points dans load_or_fetch_data().")
+        return
+    diagnose_volatility(atr_ready)
+
+    # Le backtest complet a besoin de bien plus de données (TREND_MA_PERIOD bougies
+    # minimum) pour que le filtre de tendance soit valide.
+    df_full = df.dropna(subset=["trend_ma"])
+    if df_full.empty:
+        print(f"\nPas assez de données pour lancer le backtest complet "
+              f"(besoin de ~{config.TREND_MA_PERIOD} bougies, {len(df)} récupérées).")
+        print("Le diagnostic de volatilité ci-dessus suffit déjà pour recalibrer les seuils TP/SL — "
+              "on augmentera l'historique récupéré une fois la fiabilité des requêtes confirmée.")
         return
 
-    diagnose_volatility(df)
-    diagnose_filters(df)
+    diagnose_filters(df_full)
 
-    center_price = df["close"].iloc[0]
+    center_price = df_full["close"].iloc[0]
     strat = GridTrendStrategy(center_price)
     engine = PaperTradingEngine()
 
-    for timestamp, row in df.iterrows():
+    for timestamp, row in df_full.iterrows():
         signal = strat.generate_signal(row)
         if signal["action"]:
             engine.execute(signal, timestamp)
@@ -100,7 +115,7 @@ def run_backtest():
 
     engine.export_trades_csv(path="results/trades_forex.csv")
     engine.export_equity_csv(path="results/equity_curve_forex.csv")
-    generate_dashboard(df, engine, output_path="results/dashboard_forex.png")
+    generate_dashboard(df_full, engine, output_path="results/dashboard_forex.png")
 
     return report, engine
 
