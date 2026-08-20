@@ -48,6 +48,33 @@ def _compute_htf_trend(df: pd.DataFrame, ma_period: int) -> pd.Series:
     return hourly.fillna(True).astype(bool)
 
 
+def _compute_bollinger(close: pd.Series, period: int, num_std: float) -> tuple:
+    """Retourne (bande_basse, bande_haute, largeur_pct) des Bollinger Bands."""
+    sma = close.rolling(period).mean()
+    std = close.rolling(period).std()
+    lower = sma - num_std * std
+    upper = sma + num_std * std
+    width_pct = (upper - lower) / sma * 100
+    return lower, upper, width_pct
+
+
+def _compute_alligator(df: pd.DataFrame) -> tuple:
+    """
+    Indicateur Alligator (Bill Williams) : 3 moyennes mobiles décalées vers l'avant
+    sur le prix médian (high+low)/2. Mâchoire (13, décalée +8), Dents (8, décalée +5),
+    Lèvres (5, décalée +3). Lignes enchevêtrées = marché "endormi" (range, favorable
+    au grid) ; lignes qui s'écartent = marché "réveillé" (tendance, défavorable).
+    Ajouté en mode OBSERVATION uniquement — ne bloque aucun trade pour l'instant,
+    sert à comparer son signal à HTF/Bollinger sur de vraies données avant de
+    décider s'il apporte une information supplémentaire ou fait doublon.
+    """
+    median_price = (df["high"] + df["low"]) / 2
+    jaw = median_price.rolling(13).mean().shift(8)
+    teeth = median_price.rolling(8).mean().shift(5)
+    lips = median_price.rolling(5).mean().shift(3)
+    return jaw, teeth, lips
+
+
 def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
@@ -72,15 +99,43 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
 
     df["htf_uptrend"] = _compute_htf_trend(df, config.HTF_MA_PERIOD)
 
+    # Bollinger Bands : détecte les phases de range serré (bon pour le grid) vs
+    # d'expansion de volatilité (risque de breakout qui laminerait le grid).
+    bb_lower, bb_upper, bb_width_pct = _compute_bollinger(
+        df["close"], config.BOLLINGER_PERIOD, config.BOLLINGER_STD
+    )
+    df["bb_lower"] = bb_lower
+    df["bb_upper"] = bb_upper
+    df["bb_width_pct"] = bb_width_pct
+    # Percentile de la largeur actuelle par rapport à son historique récent —
+    # une largeur dans le bas du percentile = range serré = terrain favorable au grid.
+    df["bb_width_percentile"] = bb_width_pct.rolling(config.BOLLINGER_PERIOD).apply(
+        lambda s: (s.iloc[-1] >= s).mean() * 100, raw=False
+    )
+    df["bb_squeeze"] = df["bb_width_percentile"] <= config.BOLLINGER_SQUEEZE_PERCENTILE
+
+    # Alligator (observation uniquement, ne filtre aucun trade actuellement)
+    jaw, teeth, lips = _compute_alligator(df)
+    df["alligator_jaw"] = jaw
+    df["alligator_teeth"] = teeth
+    df["alligator_lips"] = lips
+    # Écart entre les 3 lignes en % du prix — plus c'est petit, plus l'alligator
+    # "dort" (lignes enchevêtrées = range). Utile pour comparer à HTF/Bollinger plus tard.
+    df["alligator_spread_pct"] = (
+        (df[["alligator_jaw", "alligator_teeth", "alligator_lips"]].max(axis=1)
+         - df[["alligator_jaw", "alligator_teeth", "alligator_lips"]].min(axis=1))
+        / df["close"] * 100
+    )
+
     return df
 
 
 def build_grid(center_price: float, levels: int, spacing_pct: float) -> list:
     grid = []
     for i in range(1, levels + 1):
-        grid.append(round(center_price * (1 - spacing_pct / 100 * i), 2))
-        grid.append(round(center_price * (1 + spacing_pct / 100 * i), 2))
-    grid.append(round(center_price, 2))
+        grid.append(round(center_price * (1 - spacing_pct / 100 * i), 6))
+        grid.append(round(center_price * (1 + spacing_pct / 100 * i), 6))
+    grid.append(round(center_price, 6))
     return sorted(grid)
 
 
@@ -98,7 +153,15 @@ class GridTrendStrategy:
         rsi_ok = (not config.RSI_FILTER_ENABLED) or (row.get("rsi", 50) < config.RSI_OVERBOUGHT)
         macd_ok = (not config.MACD_FILTER_ENABLED) or bool(row.get("macd_bullish", True))
         volume_ok = (not config.VOLUME_FILTER_ENABLED) or bool(row.get("volume_ok", True))
-        return trend_ok and htf_ok and rsi_ok and macd_ok and volume_ok
+        # Bollinger utilisé comme coupe-circuit (pas comme exigence stricte) : bloque
+        # seulement en cas d'expansion nette des bandes (signal de breakout en cours,
+        # dangereux pour un grid) — ne réduit pas les opportunités déjà rares en range normal.
+        bollinger_ok = True
+        if config.BOLLINGER_ENABLED:
+            width_pctile = row.get("bb_width_percentile")
+            if width_pctile is not None and not pd.isna(width_pctile):
+                bollinger_ok = width_pctile < config.BOLLINGER_EXPANSION_HALT_PERCENTILE
+        return trend_ok and htf_ok and rsi_ok and macd_ok and volume_ok and bollinger_ok
 
     def generate_signal(self, row: pd.Series) -> dict:
         price = row["close"]
