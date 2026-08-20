@@ -47,4 +47,3 @@ jobs:
           git add -f data/eurusd_history.csv
           git diff --quiet --cached || git commit -m "Données EUR/USD récupérées [skip ci]"
           git push
-</parameter>
