@@ -66,15 +66,27 @@ RSI_PERIOD = 56   # équivalent à 14h en bougies de 15min
 RSI_OVERBOUGHT = 70   # pas d'achat si RSI au-dessus de ce seuil
 
 # --- MACD : confirmation de tendance plus réactive que la SMA seule ---
-MACD_FILTER_ENABLED = True
+MACD_FILTER_ENABLED = False  # désactivé — combiné à Volume, bloquait les 2 seuls contacts
+                              # de grid disponibles sur notre échantillon de test EUR/USD
 MACD_FAST = 48    # équivalent à 12h
 MACD_SLOW = 104   # équivalent à 26h
 MACD_SIGNAL = 36  # équivalent à 9h
 
 # --- Volume : ne trade que sur des mouvements confirmés par le volume ---
-VOLUME_FILTER_ENABLED = True
+VOLUME_FILTER_ENABLED = False  # désactivé — trop restrictif pour la fréquence de trades visée
 VOLUME_MA_PERIOD = 80   # équivalent à 20h en bougies de 15min
 VOLUME_MIN_RATIO = 1.0   # volume actuel doit être >= VOLUME_MA * ce ratio pour valider un achat
+
+# --- Bollinger Bands : combine tendance + volatilité. Utilisé comme COUPE-CIRCUIT
+# (bloque en cas d'expansion nette = risque de breakout), pas comme exigence stricte
+# de contact avec la bande basse — sinon ça élimine les rares opportunités de grid.
+BOLLINGER_ENABLED = True
+BOLLINGER_PERIOD = 80    # même fenêtre que la moyenne mobile de volume (~20h)
+BOLLINGER_STD = 2.0      # écart-type standard (2x, valeur classique)
+BOLLINGER_SQUEEZE_PERCENTILE = 30  # (informatif, pas encore utilisé dans la logique)
+BOLLINGER_EXPANSION_HALT_PERCENTILE = 90  # au-dessus de ce percentile de largeur de
+                                            # bande, on considère un breakout en cours
+                                            # et on n'achète plus (risque pour le grid)
 
 # --- Filtre de tendance ---
 TREND_MA_PERIOD = 150     # réduit (était 384) pour libérer plus de bougies utilisables sur
