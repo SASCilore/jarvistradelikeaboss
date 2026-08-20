@@ -28,15 +28,13 @@ def get_ig_service() -> IGService:
             "et IG_API_KEY sont bien configurés (variables d'env ou secrets GitHub)."
         )
 
-    # use_rate_limiter active l'espacement automatique des requêtes selon les
-    # limites réelles du compte. Observé empiriquement : le compte démo tolère
-    # ~25 requêtes/minute avant un 403, mais le limiteur auto-détecté par la
-    # librairie se cale sur 28 (légèrement trop optimiste) — on force donc un
-    # rythme plus prudent (18/min) après coup, avec marge de sécurité.
-    ig_service = IGService(username, password, api_key, acc_type=config.IG_ACC_TYPE, use_rate_limiter=True)
+    # Pas de rate limiter : on a découvert que la vraie contrainte d'IG n'est pas
+    # une question de vitesse, mais un plafond fixe de 500 points par appel unique
+    # (confirmé empiriquement). Le rate limiter (thread + file d'attente) s'est
+    # révélé être une source probable de blocage dans l'environnement GitHub
+    # Actions, sans apporter de bénéfice réel — on reste simple.
+    ig_service = IGService(username, password, api_key, acc_type=config.IG_ACC_TYPE)
     ig_service.create_session()
-    ig_service.setup_rate_limiter()
-    ig_service._non_trading_requests_per_minute = 18
     return ig_service
 
 
