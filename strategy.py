@@ -1,7 +1,8 @@
 """
-Stratégie hybride : grid trading + filtres multiples + stop-loss/take-profit.
-Détection des niveaux basée sur High/Low de la bougie (comme un vrai ordre limite),
-pas seulement sur le prix de clôture.
+Stratégie mean-reversion : achat sur contact avec la bande basse des Bollinger,
+filtrée par un régime de marché (ADX) pour éviter d'acheter des creux pendant
+une vraie tendance, plus RSI/HTF/Alligator comme filtres complémentaires.
+Stop-loss/take-profit basés sur l'ATR.
 """
 import pandas as pd
 import numpy as np
@@ -61,18 +62,44 @@ def _compute_bollinger(close: pd.Series, period: int, num_std: float) -> tuple:
 def _compute_alligator(df: pd.DataFrame) -> tuple:
     """
     Indicateur Alligator (Bill Williams) : 3 moyennes mobiles décalées vers l'avant
-    sur le prix médian (high+low)/2. Mâchoire (13, décalée +8), Dents (8, décalée +5),
-    Lèvres (5, décalée +3). Lignes enchevêtrées = marché "endormi" (range, favorable
-    au grid) ; lignes qui s'écartent = marché "réveillé" (tendance, défavorable).
-    Ajouté en mode OBSERVATION uniquement — ne bloque aucun trade pour l'instant,
-    sert à comparer son signal à HTF/Bollinger sur de vraies données avant de
-    décider s'il apporte une information supplémentaire ou fait doublon.
+    sur le prix médian (high+low)/2. Bloque l'achat si les lèvres (rapide) passent
+    sous les dents (moyenne) — signal précoce de retournement baissier.
     """
     median_price = (df["high"] + df["low"]) / 2
     jaw = median_price.rolling(13).mean().shift(8)
     teeth = median_price.rolling(8).mean().shift(5)
     lips = median_price.rolling(5).mean().shift(3)
     return jaw, teeth, lips
+
+
+def _compute_adx(df: pd.DataFrame, period: int = 14) -> pd.Series:
+    """
+    ADX (Average Directional Index, Wilder) : mesure la FORCE d'une tendance,
+    indépendamment de sa direction. Contrairement à une moyenne mobile (qui accuse
+    un vrai retard), l'ADX se base sur le mouvement directionnel des bougies
+    récentes — beaucoup plus réactif pour détecter un début de tendance.
+    ADX < 20-25 = marché en range (favorable au mean-reversion).
+    ADX > 25 = tendance confirmée (dangereux pour l'achat de creux).
+    """
+    high, low, close = df["high"], df["low"], df["close"]
+
+    up_move = high.diff()
+    down_move = -low.diff()
+    plus_dm = pd.Series(np.where((up_move > down_move) & (up_move > 0), up_move, 0.0), index=df.index)
+    minus_dm = pd.Series(np.where((down_move > up_move) & (down_move > 0), down_move, 0.0), index=df.index)
+
+    high_low = high - low
+    high_close = (high - close.shift()).abs()
+    low_close = (low - close.shift()).abs()
+    true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+
+    atr_wilder = true_range.ewm(alpha=1 / period, adjust=False).mean()
+    plus_di = 100 * plus_dm.ewm(alpha=1 / period, adjust=False).mean() / atr_wilder
+    minus_di = 100 * minus_dm.ewm(alpha=1 / period, adjust=False).mean() / atr_wilder
+
+    dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, np.nan)
+    adx = dx.ewm(alpha=1 / period, adjust=False).mean()
+    return adx.fillna(0)
 
 
 def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
@@ -99,38 +126,35 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
 
     df["htf_uptrend"] = _compute_htf_trend(df, config.HTF_MA_PERIOD)
 
-    # Bollinger Bands : détecte les phases de range serré (bon pour le grid) vs
-    # d'expansion de volatilité (risque de breakout qui laminerait le grid).
     bb_lower, bb_upper, bb_width_pct = _compute_bollinger(
         df["close"], config.BOLLINGER_PERIOD, config.BOLLINGER_STD
     )
     df["bb_lower"] = bb_lower
     df["bb_upper"] = bb_upper
     df["bb_width_pct"] = bb_width_pct
-    # Percentile de la largeur actuelle par rapport à son historique récent —
-    # une largeur dans le bas du percentile = range serré = terrain favorable au grid.
     df["bb_width_percentile"] = bb_width_pct.rolling(config.BOLLINGER_PERIOD).apply(
         lambda s: (s.iloc[-1] >= s).mean() * 100, raw=False
     )
     df["bb_squeeze"] = df["bb_width_percentile"] <= config.BOLLINGER_SQUEEZE_PERCENTILE
 
-    # Alligator (observation uniquement, ne filtre aucun trade actuellement)
     jaw, teeth, lips = _compute_alligator(df)
     df["alligator_jaw"] = jaw
     df["alligator_teeth"] = teeth
     df["alligator_lips"] = lips
-    # Écart entre les 3 lignes en % du prix — plus c'est petit, plus l'alligator
-    # "dort" (lignes enchevêtrées = range). Utile pour comparer à HTF/Bollinger plus tard.
     df["alligator_spread_pct"] = (
         (df[["alligator_jaw", "alligator_teeth", "alligator_lips"]].max(axis=1)
          - df[["alligator_jaw", "alligator_teeth", "alligator_lips"]].min(axis=1))
         / df["close"] * 100
     )
 
+    df["adx"] = _compute_adx(df, config.ADX_PERIOD)
+
     return df
 
 
 def build_grid(center_price: float, levels: int, spacing_pct: float) -> list:
+    """Conservé pour compatibilité (utilisé par certains scripts de diagnostic),
+    mais n'est plus utilisé par GridTrendStrategy pour générer des signaux."""
     grid = []
     for i in range(1, levels + 1):
         grid.append(round(center_price * (1 - spacing_pct / 100 * i), 6))
@@ -140,36 +164,74 @@ def build_grid(center_price: float, levels: int, spacing_pct: float) -> list:
 
 
 class GridTrendStrategy:
+    """
+    Stratégie mean-reversion BIDIRECTIONNELLE : achat sur contact avec la bande
+    basse des Bollinger (long), vente à découvert sur contact avec la bande haute
+    (short) — permet de trader aussi bien les phases de range que les faux départs
+    de tendance dans les deux sens, plutôt que de rester inactif pendant les baisses.
+    """
     def __init__(self, center_price: float):
         self.center_price = center_price
-        self.open_grid_positions = []
+        self.open_grid_positions = []  # chaque position a un champ "direction": "long"/"short"
 
     def recenter(self, new_center_price: float):
         self.center_price = new_center_price
 
-    def _entry_filters_ok(self, row: pd.Series) -> bool:
-        trend_ok = (not config.TREND_FILTER_ENABLED) or bool(row.get("uptrend", True))
-        htf_ok = (not config.HTF_TREND_ENABLED) or bool(row.get("htf_uptrend", True))
-        rsi_ok = (not config.RSI_FILTER_ENABLED) or (row.get("rsi", 50) < config.RSI_OVERBOUGHT)
-        macd_ok = (not config.MACD_FILTER_ENABLED) or bool(row.get("macd_bullish", True))
-        volume_ok = (not config.VOLUME_FILTER_ENABLED) or bool(row.get("volume_ok", True))
-        # Bollinger utilisé comme coupe-circuit (pas comme exigence stricte) : bloque
-        # seulement en cas d'expansion nette des bandes (signal de breakout en cours,
-        # dangereux pour un grid) — ne réduit pas les opportunités déjà rares en range normal.
+    def _regime_filters_ok(self, row: pd.Series) -> bool:
+        """Filtres partagés entre long et short : coupe-circuit expansion des
+        bandes (Bollinger) et régime de marché (ADX) — s'appliquent pareil
+        quelle que soit la direction envisagée."""
         bollinger_ok = True
         if config.BOLLINGER_ENABLED:
             width_pctile = row.get("bb_width_percentile")
             if width_pctile is not None and not pd.isna(width_pctile):
                 bollinger_ok = width_pctile < config.BOLLINGER_EXPANSION_HALT_PERCENTILE
-        return trend_ok and htf_ok and rsi_ok and macd_ok and volume_ok and bollinger_ok
+        adx_ok = True
+        if config.ADX_FILTER_ENABLED:
+            adx = row.get("adx")
+            if adx is not None and not pd.isna(adx):
+                adx_ok = adx < config.ADX_MAX_FOR_ENTRY
+        return bollinger_ok and adx_ok
+
+    def _directional_filters_ok(self, row: pd.Series, direction: str) -> bool:
+        """Filtres spécifiques à la direction envisagée (long ou short) —
+        symétriques : ce qui confirme un achat pour le long doit être inversé
+        pour le short (ex: éviter d'acheter en tendance baissière naissante,
+        éviter de vendre à découvert en tendance haussière naissante)."""
+        uptrend = bool(row.get("uptrend", True))
+        htf_uptrend = bool(row.get("htf_uptrend", True))
+        rsi = row.get("rsi", 50)
+        macd_bullish = bool(row.get("macd_bullish", True))
+        lips = row.get("alligator_lips")
+        teeth = row.get("alligator_teeth")
+        volume_ok = bool(row.get("volume_ok", True))
+
+        if direction == "long":
+            trend_ok = (not config.TREND_FILTER_ENABLED) or uptrend
+            htf_ok = (not config.HTF_TREND_ENABLED) or htf_uptrend
+            rsi_ok = (not config.RSI_FILTER_ENABLED) or (rsi < config.RSI_OVERBOUGHT)
+            macd_ok = (not config.MACD_FILTER_ENABLED) or macd_bullish
+            alligator_ok = True
+            if config.ALLIGATOR_FILTER_ENABLED and lips is not None and teeth is not None \
+                    and not pd.isna(lips) and not pd.isna(teeth):
+                alligator_ok = lips >= teeth
+        else:  # short
+            trend_ok = (not config.TREND_FILTER_ENABLED) or (not uptrend)
+            htf_ok = (not config.HTF_TREND_ENABLED) or (not htf_uptrend)
+            rsi_ok = (not config.RSI_FILTER_ENABLED) or (rsi > config.RSI_OVERSOLD)
+            macd_ok = (not config.MACD_FILTER_ENABLED) or (not macd_bullish)
+            alligator_ok = True
+            if config.ALLIGATOR_FILTER_ENABLED and lips is not None and teeth is not None \
+                    and not pd.isna(lips) and not pd.isna(teeth):
+                alligator_ok = lips <= teeth
+
+        volume_condition = (not config.VOLUME_FILTER_ENABLED) or volume_ok
+        return trend_ok and htf_ok and rsi_ok and macd_ok and alligator_ok and volume_condition
 
     def generate_signal(self, row: pd.Series) -> dict:
         price = row["close"]
         candle_high = row.get("high", price)
         candle_low = row.get("low", price)
-
-        if abs(price - self.center_price) / self.center_price * 100 > config.GRID_RECENTER_THRESHOLD_PCT:
-            self.center_price = price
 
         atr_percentile = row.get("atr_percentile", 0)
         volatility_halted = config.VOLATILITY_HALT_ENABLED and atr_percentile >= config.VOLATILITY_HALT_PERCENTILE
@@ -178,36 +240,56 @@ class GridTrendStrategy:
         if pd.isna(spacing_pct):
             spacing_pct = config.GRID_SPACING_PCT
 
-        grid_levels = build_grid(self.center_price, config.GRID_LEVELS, spacing_pct)
-        buy_levels = [lv for lv in grid_levels if lv < self.center_price]
+        regime_ok = self._regime_filters_ok(row) and not volatility_halted
 
-        buy_allowed = self._entry_filters_ok(row) and not volatility_halted
+        if regime_ok and len(self.open_grid_positions) < config.MAX_CONCURRENT_POSITIONS:
+            bb_lower = row.get("bb_lower")
+            bb_upper = row.get("bb_upper")
 
-        if buy_allowed:
-            already_open_prices = {p["buy_price"] for p in self.open_grid_positions}
-            for lv in buy_levels:
-                # Comme un vrai ordre limite : se déclenche si le prix a traversé ce niveau
-                # PENDANT la bougie (entre son plus bas et son plus haut), pas seulement si
-                # la clôture tombe exactement dessus — sinon on rate presque tout.
-                if candle_low <= lv <= candle_high and lv not in already_open_prices:
-                    self.open_grid_positions.append({"buy_price": lv, "spacing_pct": spacing_pct})
-                    return {"action": "BUY", "price": lv, "size_usd": config.GRID_ORDER_SIZE_USD, "grid_level": lv}
+            # Entrée LONG : contact avec la bande basse
+            if (self._directional_filters_ok(row, "long") and bb_lower is not None
+                    and not pd.isna(bb_lower) and candle_low <= bb_lower <= candle_high):
+                self.open_grid_positions.append({"buy_price": bb_lower, "spacing_pct": spacing_pct, "direction": "long"})
+                return {"action": "BUY", "price": bb_lower, "size_usd": config.GRID_ORDER_SIZE_USD,
+                        "grid_level": bb_lower, "direction": "long"}
 
+            # Entrée SHORT : contact avec la bande haute
+            if (config.SHORT_ENABLED and self._directional_filters_ok(row, "short") and bb_upper is not None
+                    and not pd.isna(bb_upper) and candle_low <= bb_upper <= candle_high):
+                self.open_grid_positions.append({"buy_price": bb_upper, "spacing_pct": spacing_pct, "direction": "short"})
+                return {"action": "SELL", "price": bb_upper, "size_usd": config.GRID_ORDER_SIZE_USD,
+                        "grid_level": bb_upper, "direction": "short"}
+
+        # Sorties : take-profit / stop-loss, inversés selon la direction de la position
         for pos in list(self.open_grid_positions):
-            take_profit_price = pos["buy_price"] * (1 + pos["spacing_pct"] / 100)
-            stop_loss_price = None
-            if config.STOP_LOSS_ENABLED:
-                sl_pct = pos["spacing_pct"] / config.STOP_LOSS_RATIO
-                stop_loss_price = pos["buy_price"] * (1 - sl_pct / 100)
+            entry = pos["buy_price"]
+            sp = pos["spacing_pct"]
+            sl_pct = sp / config.STOP_LOSS_RATIO if config.STOP_LOSS_ENABLED else None
 
-            if candle_high >= take_profit_price:
-                self.open_grid_positions.remove(pos)
-                return {"action": "SELL", "price": take_profit_price, "size_usd": config.GRID_ORDER_SIZE_USD,
-                        "grid_level": pos["buy_price"], "reason": "take_profit"}
+            if pos["direction"] == "long":
+                take_profit_price = entry * (1 + sp / 100)
+                stop_loss_price = entry * (1 - sl_pct / 100) if sl_pct is not None else None
 
-            if stop_loss_price is not None and candle_low <= stop_loss_price:
-                self.open_grid_positions.remove(pos)
-                return {"action": "SELL", "price": stop_loss_price, "size_usd": config.GRID_ORDER_SIZE_USD,
-                        "grid_level": pos["buy_price"], "reason": "stop_loss"}
+                if candle_high >= take_profit_price:
+                    self.open_grid_positions.remove(pos)
+                    return {"action": "SELL", "price": take_profit_price, "size_usd": config.GRID_ORDER_SIZE_USD,
+                            "grid_level": entry, "reason": "take_profit", "direction": "long"}
+                if stop_loss_price is not None and candle_low <= stop_loss_price:
+                    self.open_grid_positions.remove(pos)
+                    return {"action": "SELL", "price": stop_loss_price, "size_usd": config.GRID_ORDER_SIZE_USD,
+                            "grid_level": entry, "reason": "stop_loss", "direction": "long"}
+
+            else:  # short : le profit vient d'une BAISSE du prix après l'entrée
+                take_profit_price = entry * (1 - sp / 100)
+                stop_loss_price = entry * (1 + sl_pct / 100) if sl_pct is not None else None
+
+                if candle_low <= take_profit_price:
+                    self.open_grid_positions.remove(pos)
+                    return {"action": "BUY", "price": take_profit_price, "size_usd": config.GRID_ORDER_SIZE_USD,
+                            "grid_level": entry, "reason": "take_profit", "direction": "short"}
+                if stop_loss_price is not None and candle_high >= stop_loss_price:
+                    self.open_grid_positions.remove(pos)
+                    return {"action": "BUY", "price": stop_loss_price, "size_usd": config.GRID_ORDER_SIZE_USD,
+                            "grid_level": entry, "reason": "stop_loss", "direction": "short"}
 
         return {"action": None, "price": price, "size_usd": 0, "grid_level": None}
