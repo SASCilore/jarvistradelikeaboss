@@ -28,11 +28,6 @@ def get_ig_service() -> IGService:
             "et IG_API_KEY sont bien configurés (variables d'env ou secrets GitHub)."
         )
 
-    # Pas de rate limiter : on a découvert que la vraie contrainte d'IG n'est pas
-    # une question de vitesse, mais un plafond fixe de 500 points par appel unique
-    # (confirmé empiriquement). Le rate limiter (thread + file d'attente) s'est
-    # révélé être une source probable de blocage dans l'environnement GitHub
-    # Actions, sans apporter de bénéfice réel — on reste simple.
     ig_service = IGService(username, password, api_key, acc_type=config.IG_ACC_TYPE)
     ig_service.create_session()
     return ig_service
@@ -100,6 +95,35 @@ def fetch_ohlcv_ig(ig_service: IGService, epic: str, resolution: str = "15Min",
         df["volume"] = raw[("last", "Volume")]
     else:
         df["volume"] = 1.0  # repli si IG ne fournit pas de volume pour cet instrument
+
+    df.index.name = "timestamp"
+    df.index = pd.to_datetime(df.index)
+    return df
+
+
+def fetch_ohlcv_ig_date_range(ig_service: IGService, epic: str, resolution: str,
+                                start_date: str, end_date: str) -> pd.DataFrame:
+    """
+    Comme fetch_ohlcv_ig, mais cible une plage de dates précise plutôt que
+    "les N derniers points" — utile pour backtester une période historique
+    spécifique (ex: une semaine de février 2026) plutôt que la période récente.
+    Format des dates (API v2) : 'YYYY-MM-DD HH:MM:SS'.
+    """
+    response = ig_service.fetch_historical_prices_by_epic_and_date_range(
+        epic, resolution=resolution, start_date=start_date, end_date=end_date
+    )
+    raw = response["prices"]
+
+    df = pd.DataFrame(index=raw.index)
+    for col in ["Open", "High", "Low", "Close"]:
+        bid = raw[("bid", col)]
+        ask = raw[("ask", col)]
+        df[col.lower()] = (bid + ask) / 2
+
+    if ("last", "Volume") in raw.columns:
+        df["volume"] = raw[("last", "Volume")]
+    else:
+        df["volume"] = 1.0
 
     df.index.name = "timestamp"
     df.index = pd.to_datetime(df.index)
