@@ -1,7 +1,7 @@
 """
-Backtest forex (EUR/USD via IG) — réutilise la même stratégie, le même moteur de
-paper trading et le même dashboard que le bot BTC (strategy.py, paper_engine.py,
-dashboard.py sont génériques, indépendants de l'actif tradé).
+Backtest sur l'instrument configuré (config.FOREX_EPIC) via IG — réutilise la même
+stratégie, le même moteur de paper trading et le même dashboard, indépendamment
+de l'actif tradé (strategy.py, paper_engine.py, dashboard.py sont génériques).
 
 Usage : python main_forex.py
 """
@@ -15,11 +15,9 @@ from strategy import add_indicators, GridTrendStrategy
 from paper_engine import PaperTradingEngine
 from dashboard import generate_dashboard
 
-# Affiche les logs internes de la librairie trading_ig, notamment le quota
-# restant de données historiques ("Historic price data allowance: X remaining")
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-DATA_PATH = "data/eurusd_history.csv"
+DATA_PATH = "data/nasdaq_history.csv"
 
 
 def load_or_fetch_data() -> pd.DataFrame:
@@ -27,11 +25,8 @@ def load_or_fetch_data() -> pd.DataFrame:
         print(f"Chargement des données depuis {DATA_PATH}")
         return pd.read_csv(DATA_PATH, index_col="timestamp", parse_dates=True)
 
-    print("Connexion à IG pour récupérer l'historique EUR/USD...")
+    print(f"Connexion à IG pour récupérer l'historique de {config.FOREX_EPIC}...")
     ig_service = get_ig_service()
-    # 500 points EXACTEMENT — plafond confirmé de façon déterministe : 20 points par
-    # page, 25 pages maximum par appel = 500 points max. Au-delà (testé à 550), la
-    # 26e page échoue systématiquement, quelle que soit la vitesse des requêtes.
     df = fetch_ohlcv_ig(ig_service, config.FOREX_EPIC, resolution="15Min", num_points=500)
     os.makedirs("data", exist_ok=True)
     df.to_csv(DATA_PATH)
@@ -60,10 +55,10 @@ def diagnose_filters(df: pd.DataFrame):
 
 
 def diagnose_volatility(df: pd.DataFrame):
-    """Affiche la volatilité réelle observée pour calibrer les seuils TP/SL sur EUR/USD."""
+    """Affiche la volatilité réelle observée pour calibrer les seuils TP/SL."""
     print("\n=== Diagnostic de volatilité (pour calibration TP/SL) ===")
     print(f"ATR moyen (en % du prix) : {(df['atr'] / df['close'] * 100).mean():.4f}%")
-    print(f"Espacement de grid calculé (atr_spacing_pct) — moyenne : {df['atr_spacing_pct'].mean():.4f}%")
+    print(f"Espacement calculé (atr_spacing_pct) — moyenne : {df['atr_spacing_pct'].mean():.4f}%")
     print(f"Mouvement max sur une bougie (high-low, % du close) : {((df['high']-df['low'])/df['close']*100).max():.4f}%")
     print(f"Amplitude totale de la période (min-max close) : {((df['close'].max()-df['close'].min())/df['close'].min()*100):.2f}%")
 
@@ -72,8 +67,6 @@ def run_backtest():
     df = load_or_fetch_data()
     df = add_indicators(df)
 
-    # Le diagnostic de volatilité n'a besoin que de l'ATR (warm-up court, ATR_PERIOD
-    # bougies) — utile même si on n'a pas encore assez de données pour le backtest complet.
     atr_ready = df.dropna(subset=["atr"])
     if atr_ready.empty:
         print(f"Pas assez de données même pour l'ATR (besoin de ~{config.ATR_PERIOD} bougies, "
@@ -81,43 +74,14 @@ def run_backtest():
         return
     diagnose_volatility(atr_ready)
 
-    # Le backtest complet a besoin de bien plus de données (TREND_MA_PERIOD bougies
-    # minimum) pour que le filtre de tendance soit valide.
     df_full = df.dropna(subset=["trend_ma"])
     if df_full.empty:
         print(f"\nPas assez de données pour lancer le backtest complet "
               f"(besoin de ~{config.TREND_MA_PERIOD} bougies, {len(df)} récupérées).")
-        print("Le diagnostic de volatilité ci-dessus suffit déjà pour recalibrer les seuils TP/SL — "
-              "on augmentera l'historique récupéré une fois la fiabilité des requêtes confirmée.")
+        print("Le diagnostic de volatilité ci-dessus suffit déjà pour recalibrer les seuils TP/SL.")
         return
 
     diagnose_filters(df_full)
-
-    # Instrumentation corrigée : reproduit EXACTEMENT la logique réelle de
-    # generate_signal (même recentrage, même condition low<=niveau<=high pour
-    # TOUS les niveaux d'achat, pas juste le plus proche) — la version précédente
-    # testait une condition trop stricte et ne reflétait pas fidèlement le code réel.
-    from strategy import build_grid
-    diag_center = df_full["close"].iloc[0]
-    candles_with_level_in_range = 0
-    for timestamp, row in df_full.iterrows():
-        price = row["close"]
-        if abs(price - diag_center) / diag_center * 100 > config.GRID_RECENTER_THRESHOLD_PCT:
-            diag_center = price
-
-        spacing_pct = row.get("atr_spacing_pct", config.GRID_SPACING_PCT)
-        if pd.isna(spacing_pct):
-            spacing_pct = config.GRID_SPACING_PCT
-        grid_levels = build_grid(diag_center, config.GRID_LEVELS, spacing_pct)
-        buy_levels = [lv for lv in grid_levels if lv < diag_center]
-
-        # Vraie condition du code : le niveau est-il CONTENU entre low et high ?
-        if any(row["low"] <= lv <= row["high"] for lv in buy_levels):
-            candles_with_level_in_range += 1
-
-    print(f"\n=== Instrumentation corrigée (vraie condition low<=niveau<=high) ===")
-    print(f"Bougies où au moins un niveau d'achat était dans la fourchette Low-High : "
-          f"{candles_with_level_in_range} / {len(df_full)} ({candles_with_level_in_range/len(df_full)*100:.2f}%)")
 
     center_price = df_full["close"].iloc[0]
     strat = GridTrendStrategy(center_price)
@@ -134,7 +98,7 @@ def run_backtest():
             break
 
     report = engine.report()
-    print("\n=== Résultats du backtest EUR/USD (paper trading) ===")
+    print("\n=== Résultats du backtest (paper trading) ===")
     for k, v in report.items():
         print(f"{k}: {v}")
 
