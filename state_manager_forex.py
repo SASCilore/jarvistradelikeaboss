@@ -1,6 +1,6 @@
 """
-Gère l'état persistant du bot FOREX (séparé du bot BTC/Kraken) :
-- L'état du portefeuille (cash, unités EUR détenues, positions ouvertes)
+Gère l'état persistant du bot (séparé du bot BTC/Kraken) :
+- L'état du portefeuille (cash, unités détenues, positions ouvertes)
 - L'historique de prix maintenu localement (pour éviter de retélécharger tout
   l'historique à chaque run — le quota IG de 10 000 points/semaine ne le permettrait
   pas si on rafraîchissait tout depuis zéro toutes les 15-30 min)
@@ -13,11 +13,14 @@ from datetime import datetime, timezone
 
 import config
 
-FOREX_STATE_PATH = "state/forex_state.json"
-FOREX_PRICE_HISTORY_PATH = "state/forex_price_history.csv"
-FOREX_DAILY_HISTORY_PATH = "state/forex_daily_history.csv"
-FOREX_TRADES_LOG_PATH = "state/forex_trades_history.csv"
-FOREX_EQUITY_LOG_PATH = "state/forex_equity_history.csv"
+FOREX_STATE_PATH = "state/nasdaq_state.json"
+FOREX_PRICE_HISTORY_PATH = "state/nasdaq_price_history.csv"
+FOREX_DAILY_HISTORY_PATH = "state/nasdaq_daily_history.csv"
+FOREX_TRADES_LOG_PATH = "state/nasdaq_trades_history.csv"
+FOREX_EQUITY_LOG_PATH = "state/nasdaq_equity_history.csv"
+# Renommé depuis "forex_*" vers "nasdaq_*" lors du changement d'instrument (EUR/USD -> Nasdaq)
+# pour repartir sur un historique propre — mélanger les deux aurait faussé tous les indicateurs.
+# Les anciens fichiers state/forex_*.* restent dans le repo (inoffensifs) si besoin d'y revenir.
 
 MAX_HISTORY_ROWS = 350
 
@@ -38,7 +41,7 @@ def load_forex_state(fallback_center_price: float) -> dict:
     if os.path.exists(FOREX_STATE_PATH):
         with open(FOREX_STATE_PATH, "r") as f:
             return json.load(f)
-    print("Aucun état forex existant, initialisation.")
+    print("Aucun état existant, initialisation.")
     return default_forex_state(fallback_center_price)
 
 
@@ -47,7 +50,7 @@ def save_forex_state(state: dict):
     state["last_run_at"] = datetime.now(timezone.utc).isoformat()
     with open(FOREX_STATE_PATH, "w") as f:
         json.dump(state, f, indent=2)
-    print(f"État forex sauvegardé dans {FOREX_STATE_PATH}")
+    print(f"État sauvegardé dans {FOREX_STATE_PATH}")
 
 
 def merge_price_history(new_candles: pd.DataFrame, path: str = FOREX_PRICE_HISTORY_PATH,
