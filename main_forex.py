@@ -27,7 +27,10 @@ def load_or_fetch_data() -> pd.DataFrame:
 
     print(f"Connexion à IG pour récupérer l'historique de {config.FOREX_EPIC}...")
     ig_service = get_ig_service()
-    df = fetch_ohlcv_ig(ig_service, config.FOREX_EPIC, resolution="15Min", num_points=500)
+    df = fetch_ohlcv_ig(ig_service, config.FOREX_EPIC, resolution="15Min", num_points=380)
+    # Réduit temporairement de 500 à 380 — il ne reste que 409 points sur le quota
+    # hebdomadaire IG (consommé par nos tests précédents), pas assez pour un nouveau
+    # cycle complet de 500. On remontera à 500 une fois le quota reconstitué (~26 août).
     os.makedirs("data", exist_ok=True)
     df.to_csv(DATA_PATH)
     print(f"-> {len(df)} bougies récupérées et sauvegardées.")
