@@ -44,6 +44,6 @@ jobs:
         run: |
           git config user.name "forex-backtest"
           git config user.email "forex-backtest@users.noreply.github.com"
-          git add -f data/eurusd_history.csv
-          git diff --quiet --cached || git commit -m "Données EUR/USD récupérées [skip ci]"
+          git add -f data/nasdaq_history.csv
+          git diff --quiet --cached || git commit -m "Données Nasdaq récupérées [skip ci]"
           git push
