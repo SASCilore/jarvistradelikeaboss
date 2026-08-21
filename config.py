@@ -5,7 +5,9 @@ Modifie ces valeurs pour ajuster le comportement sans toucher au reste du code.
 
 # --- IG (broker forex — remplace Kraken pour l'exécution live) ---
 IG_ACC_TYPE = "DEMO"   # "DEMO" ou "LIVE" — on reste en DEMO tant qu'on valide la stratégie
-FOREX_EPIC = "CS.D.EURUSD.CEF.IP"   # identifiant IG pour EUR/USD (trouvé via diagnose_ig.py)
+FOREX_EPIC = "IX.D.NASDAQ.IFD.IP"   # US Tech 100 / Nasdaq — anciennement "CS.D.EURUSD.CEF.IP"
+                                     # (EUR/USD, abandonné pour cause de volatilité trop faible ;
+                                     # gardé en commentaire au cas où on voudrait y revenir)
 # Les identifiants (IG_USERNAME, IG_PASSWORD, IG_API_KEY) se configurent en variables
 # d'environnement / secrets GitHub, jamais ici en dur.
 
@@ -30,8 +32,9 @@ BACKTEST_SYMBOL = "BTC/USD"
 # --- Capital simulé (paper trading) ---
 STARTING_BALANCE_USD = 10_000.0
 FEE_RATE = 0.0026         # taker fee Kraken ~0.26% (BTC uniquement, ne pas utiliser pour le forex)
-FOREX_FEE_RATE = 0.000043 # coût forex (spread IG ~0,0086% aller-retour ÷ 2, car appliqué sur
-                           # chaque jambe achat/vente séparément) — 60x moins cher que la crypto
+FOREX_FEE_RATE = 0.000034 # coût Nasdaq (spread IG ~0,0068% aller-retour ÷ 2, car appliqué
+                           # sur chaque jambe achat/vente séparément) — nom de variable
+                           # conservé "FOREX_" mais s'applique à tout instrument IG désormais
 
 # --- Grid trading (vestiges — le déclencheur "grid à niveaux fixes" a été remplacé
 # par le contact avec les Bollinger Bands, mais certains paramètres restent utilisés
