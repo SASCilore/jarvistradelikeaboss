@@ -1,5 +1,7 @@
 """
-Moteur de paper trading (argent fictif).
+Moteur de paper trading (argent fictif). Supporte maintenant les positions
+longues ET courtes (short) — "holdings" est une position nette signée :
+positif = long, négatif = short.
 """
 import pandas as pd
 import numpy as np
@@ -21,29 +23,34 @@ class PaperTradingEngine:
         return self.cash + self.btc_holdings * price
 
     def execute(self, signal: dict, timestamp):
+        """
+        BUY : ouvre ou augmente une position longue (ou referme un short existant,
+        si holdings est négatif, en le ramenant vers 0).
+        SELL : ouvre ou augmente une position courte/short (holdings devient négatif),
+        ou referme une position longue existante.
+        """
         action = signal["action"]
         price = signal["price"]
         size_usd = signal["size_usd"]
+        units = size_usd / price
+        fee = size_usd * self.fee_rate
 
         if action == "BUY" and self.cash >= size_usd:
-            fee = size_usd * self.fee_rate
-            btc_bought = (size_usd - fee) / price
+            net_units = (size_usd - fee) / price
             self.cash -= size_usd
-            self.btc_holdings += btc_bought
+            self.btc_holdings += net_units
             self.trade_log.append({
                 "timestamp": timestamp, "action": "BUY", "price": price,
-                "size_usd": size_usd, "fee": fee, "btc_amount": btc_bought
+                "size_usd": size_usd, "fee": fee, "btc_amount": net_units
             })
 
-        elif action == "SELL" and self.btc_holdings > 0:
-            btc_to_sell = min(size_usd / price, self.btc_holdings)
-            proceeds = btc_to_sell * price
-            fee = proceeds * self.fee_rate
-            self.cash += proceeds - fee
-            self.btc_holdings -= btc_to_sell
+        elif action == "SELL":
+            proceeds = size_usd - fee
+            self.cash += proceeds
+            self.btc_holdings -= units
             self.trade_log.append({
                 "timestamp": timestamp, "action": "SELL", "price": price,
-                "size_usd": proceeds, "fee": fee, "btc_amount": btc_to_sell
+                "size_usd": size_usd, "fee": fee, "btc_amount": units
             })
 
     def record_equity(self, timestamp, price: float):
