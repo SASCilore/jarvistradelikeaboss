@@ -115,10 +115,17 @@ SHORT_ENABLED = True
 # --- Filtre de tendance ---
 TREND_MA_PERIOD = 150     # réduit (était 384) pour libérer plus de bougies utilisables sur
                            # les 500 max récupérables par appel IG
-TREND_FILTER_ENABLED = True
+TREND_FILTER_ENABLED = False  # désactivé — contradictoire avec le mean-reversion : quand
+                               # le prix touche la bande basse, il est presque toujours SOUS
+                               # sa SMA150 (12,8% de "uptrend" observé sur nos touches réelles),
+                               # donc ce filtre bloquait la quasi-totalité des entrées valides
 
 # --- Filtre de tendance multi-timeframe (tendance journalière, indépendante du bruit horaire) ---
-HTF_TREND_ENABLED = True
+HTF_TREND_ENABLED = False  # désactivé — bloquait 100% des touches short sur notre test
+                            # (tendance journalière haussière constante pendant toute la période).
+                            # Exiger la tendance JOURNALIÈRE en plus du régime ADX n'a pas de sens
+                            # pour un short de retour à la moyenne (on vend un excès temporaire,
+                            # pas une vraie tendance baissière longue) — l'ADX suffit comme garde-fou.
 HTF_MA_PERIOD = 50   # moyenne mobile calculée sur les clôtures journalières
 
 # --- Risque ---
