@@ -1,15 +1,9 @@
 {
-  "cash": 10199.952400000006,
-  "asset_holdings": -0.006445338529158986,
+  "cash": 9999.952400000006,
+  "asset_holdings": 0.00010083279177790401,
   "center_price": 29133.7,
-  "open_grid_positions": [
-    {
-      "buy_price": 30635.02847842162,
-      "spacing_pct": 0.27373041310707363,
-      "direction": "short"
-    }
-  ],
+  "open_grid_positions": [],
   "last_summary_date": "2026-09-28",
   "created_at": "2026-08-24T09:27:02.831060+00:00",
-  "last_run_at": "2026-09-28T15:18:27.488707+00:00"
+  "last_run_at": "2026-09-28T21:21:23.121464+00:00"
 }
